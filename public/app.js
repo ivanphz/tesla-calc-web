@@ -8,6 +8,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (prefs.startTime) document.getElementById('start-time').value = prefs.startTime;
         if (prefs.endTime) document.getElementById('end-time').value = prefs.endTime;
         if (prefs.useNow) document.getElementById('use-now').value = prefs.useNow;
+        // ... 在 if (saved) { ... } 里面加上：
+        if (prefs.tariff) document.getElementById('tariff-config').value = prefs.tariff;
         if (prefs.activeTimeBtnId) {
             const btn = document.getElementById(prefs.activeTimeBtnId);
             if (btn) updateTimeBtnUI(btn);
@@ -45,6 +47,11 @@ async function fetchRealTimeBattery() {
     }
 }
 
+function toggleTariffSettings() {
+    const el = document.getElementById('tariff-config');
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
 function saveSettings() {
     const activeTimeBtn = document.querySelector('.quick-btns .active[id^="btn-time"]');
     const prefs = {
@@ -54,6 +61,7 @@ function saveSettings() {
         endTime: document.getElementById('end-time').value,
         useNow: document.getElementById('use-now').value,
         activeTimeBtnId: activeTimeBtn ? activeTimeBtn.id : 'btn-time-night'
+        tariff: document.getElementById('tariff-config').value
     };
     localStorage.setItem('tesla_calc_prefs', JSON.stringify(prefs));
 }
@@ -144,7 +152,8 @@ async function calculate() {
         start_hour: startTime[0],
         start_minute: startTime[1],
         end_hour: endTime[0],
-        end_minute: endTime[1]
+        end_minute: endTime[1],
+        tariff: document.getElementById('tariff-config').value // 传给后端
     });
 
     document.getElementById('normal-result').style.display = 'none';
@@ -157,19 +166,30 @@ async function calculate() {
         document.getElementById('loading').style.display = 'none';
 
         if (data.result.error) {
+            // == 充不满的状态渲染 ==
             document.getElementById('warning-result').style.display = 'block';
             document.getElementById('warn-reachable').innerText = data.result.reachable_percentage.toFixed(1) + '%';
             document.getElementById('warn-early').innerText = data.result.early_start_time;
             document.getElementById('warn-late').innerText = data.result.late_end_time;
+            
+            // 渲染保底方案
+            const fb = data.result.fallback_stats;
+            document.getElementById('warn-fallback-current').innerText = fb.current + ' A';
+            document.getElementById('warn-fallback-cost').innerText = '¥ ' + fb.cost.toFixed(2);
+            document.getElementById('warn-fallback-energy').innerText = fb.energy_added.toFixed(1) + ' kWh';
         } else {
+            // == 正常满电的状态渲染 ==
             document.getElementById('normal-result').style.display = 'block';
             document.getElementById('res-current').innerText = data.result.optimal_current + ' A';
             document.getElementById('res-duration').innerText = data.result.charging_duration + ' 小时';
             document.getElementById('res-power').innerText = data.result.effective_power_kw + ' kW';
             document.getElementById('res-loss').innerText = data.result.loss_percentage + ' %';
+            
+            // 渲染新增的电量和费用
+            document.getElementById('res-energy').innerText = data.result.energy_added.toFixed(1) + ' kWh';
+            document.getElementById('res-cost').innerText = '¥ ' + data.result.cost.toFixed(2);
         }
     } catch (error) {
         alert('计算出错，请检查网络或后端配置。');
         document.getElementById('loading').style.display = 'none';
     }
-}

@@ -5,7 +5,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (prefs.target) syncTarget(prefs.target);
         if (prefs.startTime) document.getElementById('start-time').value = prefs.startTime;
         if (prefs.endTime) document.getElementById('end-time').value = prefs.endTime;
-        if (prefs.useNow) document.getElementById('use-now').value = prefs.useNow;
         if (prefs.tariff) document.getElementById('tariff-config').value = prefs.tariff;
         if (prefs.activeTimeBtnId) {
             const btn = document.getElementById(prefs.activeTimeBtnId);
@@ -13,6 +12,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if (prefs.start) syncStart(prefs.start, false); 
     }
+    
+    // 初始化沙盒时间为真实时间
+    syncLocalTime();
+    
     await fetchRealTimeBattery();
 });
 
@@ -25,16 +28,21 @@ async function fetchRealTimeBattery() {
         const data = await response.json();
         if (data && typeof data.battery === 'number') {
             syncStart(data.battery, false);
-            syncStatus.innerText = "(✓ 实时车机数据)";
+            syncStatus.innerText = "(✓ 实时数据)";
             syncStatus.style.color = "#10b981";
         } else {
             syncStatus.innerText = "(获取失败，使用本地记录)";
             syncStatus.style.color = "#f59e0b";
         }
     } catch (error) {
-        syncStatus.innerText = "(无法连接云端，使用本地记录)";
+        syncStatus.innerText = "(连接失败，使用本地记录)";
         syncStatus.style.color = "#f59e0b";
     }
+}
+
+function syncLocalTime() {
+    const now = new Date();
+    document.getElementById('mock-time').value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 }
 
 function toggleTariffSettings() {
@@ -49,7 +57,6 @@ function saveSettings() {
         target: document.getElementById('target-battery').value,
         startTime: document.getElementById('start-time').value,
         endTime: document.getElementById('end-time').value,
-        useNow: document.getElementById('use-now').value,
         activeTimeBtnId: activeTimeBtn ? activeTimeBtn.id : 'btn-time-night',
         tariff: document.getElementById('tariff-config').value
     };
@@ -97,15 +104,6 @@ function adjustTarget(delta) {
 function setTimeSlot(start, end, btn) {
     document.getElementById('start-time').value = start;
     document.getElementById('end-time').value = end;
-    document.getElementById('use-now').value = 'false';
-    updateTimeBtnUI(btn);
-    saveSettings();
-}
-
-function setNowAsStart(btn) {
-    document.getElementById('use-now').value = 'true';
-    const now = new Date();
-    document.getElementById('start-time').value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     updateTimeBtnUI(btn);
     saveSettings();
 }
@@ -121,9 +119,8 @@ async function calculate() {
     const target = document.getElementById('target-battery').value;
     const startTime = document.getElementById('start-time').value.split(':');
     const endTime = document.getElementById('end-time').value.split(':');
-    const useNow = document.getElementById('use-now').value;
 
-    // 获取当前时间（真实 or 沙盒）
+    // 处理时间传递 (默认使用真实现实时间，除非开启沙盒)
     const useMock = document.getElementById('enable-mock-time').checked;
     let currHour, currMinute;
     if (useMock) {
@@ -139,7 +136,6 @@ async function calculate() {
     const params = new URLSearchParams({
         start: start,
         target: target,
-        use_now: useNow,
         start_hour: startTime[0],
         start_minute: startTime[1],
         end_hour: endTime[0],
@@ -159,17 +155,18 @@ async function calculate() {
         document.getElementById('loading').style.display = 'none';
 
         if (data.result.error) {
+            // == 充不满的状态渲染 ==
             document.getElementById('warning-result').style.display = 'block';
-            document.getElementById('warn-reachable').innerText = data.result.reachable_percentage.toFixed(1) + '%';
             
             const fb = data.result.fallback_stats;
-            document.getElementById('warn-fallback-energy').innerText = fb.energy_added.toFixed(1) + ' kWh';
+            document.getElementById('warn-fallback-label').innerText = fb.label;
+            document.getElementById('warn-reachable').innerText = fb.percent.toFixed(1) + '%';
+            document.getElementById('warn-fallback-energy').innerText = fb.energy.toFixed(1) + ' kWh';
             document.getElementById('warn-fallback-cost').innerText = '¥ ' + fb.cost.toFixed(2);
             
             const ul = document.getElementById('warn-solutions-list');
             ul.innerHTML = ''; 
             
-            // 动态渲染后端下发的最优方案
             data.result.solutions.forEach(sol => {
                 ul.innerHTML += `
                     <li style="margin-bottom: 14px; padding-left: 10px; border-left: 4px solid ${sol.color};">
@@ -179,6 +176,7 @@ async function calculate() {
                     </li>`;
             });
         } else {
+            // == 正常满电的状态渲染 ==
             document.getElementById('normal-result').style.display = 'block';
             document.getElementById('res-current').innerText = data.result.optimal_current + ' A';
             document.getElementById('res-duration').innerText = data.result.charging_duration + ' 小时';

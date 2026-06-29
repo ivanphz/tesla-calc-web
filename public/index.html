@@ -67,12 +67,11 @@
             <label style="display: flex; justify-content: space-between; cursor: pointer;" onclick="toggleTariffSettings()">
                 💰 分时电价配置 <span style="font-size: 0.85rem; color: #6b7280;">(点击展开/收起)</span>
             </label>
-            <textarea id="tariff-config" rows="5" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-family: monospace; display: none;" onchange="saveSettings()">
-00:00-07:00=0.3783
+            <textarea id="tariff-config" rows="4" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-family: monospace; display: none;" onchange="saveSettings()">
+22:00-07:00=0.3783
 07:00-11:00=0.5783
 11:00-13:00=0.3783
-13:00-22:00=0.5783
-22:00-00:00=0.3783</textarea>
+13:00-22:00=0.5783</textarea>
         </div>
 
         <button class="btn-calc" onclick="calculate()">开始计算</button>

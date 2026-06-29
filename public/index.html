@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>特斯拉充电计算器</title>
-    <!-- 引入外部 CSS -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,18 +13,33 @@
     <div class="panel">
         <h2>⚡ 充电参数设置</h2>
         
+        <!-- 当前电量：客观事实，大面板居中，多档位微调 -->
         <div class="control-group">
-            <label>当前电量 (%)</label>
-            <div class="stepper">
-                <button type="button" onclick="adjustStart(-1)">-</button>
-                <input type="number" id="start-battery" value="30" min="0" max="99" onchange="saveSettings()">
-                <button type="button" onclick="adjustStart(1)">+</button>
+            <label>当前电量 (%) <span id="sync-status" style="font-size: 0.85rem; font-weight: normal; margin-left: 8px;"></span></label>
+            <div class="stepper-large">
+                <button type="button" onclick="adjustStart(-10)">-10</button>
+                <button type="button" onclick="adjustStart(-5)">-5</button>
+                <button type="button" onclick="adjustStart(-1)">-1</button>
+                
+                <input type="number" id="start-battery" value="30" min="0" max="99" onchange="syncStart(this.value)">
+                
+                <button type="button" onclick="adjustStart(1)">+1</button>
+                <button type="button" onclick="adjustStart(5)">+5</button>
+                <button type="button" onclick="adjustStart(10)">+10</button>
             </div>
         </div>
 
-        <div class="control-group">
+        <!-- 目标电量：主观预期，滑块 + 快捷预设 + 1%步进 -->
+        <div class="control-group" style="margin-top: 32px;">
             <label>目标电量: <span id="target-val-display" style="color: var(--primary);">80%</span></label>
+            <div class="stepper" style="margin-bottom: 12px;">
+                <button type="button" onclick="adjustTarget(-1)">-</button>
+                <input type="number" id="target-battery" value="80" min="50" max="100" onchange="syncTarget(this.value)">
+                <button type="button" onclick="adjustTarget(1)">+</button>
+            </div>
+            
             <input type="range" id="target-slider" min="50" max="100" value="80" step="1" oninput="syncTarget(this.value)">
+            
             <div class="quick-btns" id="target-presets">
                 <button type="button" onclick="syncTarget(80)" class="active">80%</button>
                 <button type="button" onclick="syncTarget(85)">85%</button>
@@ -35,7 +49,7 @@
             </div>
         </div>
 
-        <div class="control-group">
+        <div class="control-group" style="margin-top: 32px;">
             <label>充电时段</label>
             <div class="quick-btns">
                 <button type="button" id="btn-time-night" onclick="setTimeSlot('22:00', '07:00', this)" class="active">谷电 (22:00-07:00)</button>
@@ -90,7 +104,6 @@
     </div>
 </div>
 
-<!-- 引入外部 JS -->
 <script src="app.js"></script>
 </body>
 </html>

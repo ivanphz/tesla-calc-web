@@ -15,7 +15,6 @@ export async function onRequest(context) {
         end_minute: parseInt(searchParams.get("end_minute"), 10) || 0,
         current_hour: parseInt(searchParams.get("current_hour"), 10) || 0,
         current_minute: parseInt(searchParams.get("current_minute"), 10) || 0,
-        use_now: searchParams.get("use_now") === "true",
         tariff_config: searchParams.get("tariff") || ""
     };
 

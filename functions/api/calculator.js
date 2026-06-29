@@ -95,28 +95,70 @@ export function calculateCharge(inputs) {
     // 充不满的情况：计算保底、方案A、方案B的费用
     // ==========================================
     if (max_charging_time_hours > charging_duration) {
+        // === 1. 核心碰撞检测：当前时间是否错过了计划时间？ ===
+    const current_time_hours = params.current_hour + params.current_minute / 60;
+    let effective_start_hours = start_time_hours;
+    let time_lost = false;
+
+    // 计算从设定的开始时间，到“现在”过了多久
+    let start_to_now = current_time_hours - start_time_hours;
+    if (start_to_now < 0) start_to_now += 24;
+
+    if (start_to_now > 0 && start_to_now < charging_duration) {
+        // 场景：迟到了（如凌晨3点才插枪，且原计划是22点到7点）
+        effective_start_hours = current_time_hours;
+        charging_duration = charging_duration - start_to_now; // 扣减已经流失的谷电时间
+        time_lost = true;
+    }
+
+    // === 2. 重新判定充不满的情况 ===
+    if (max_charging_time_hours > charging_duration) {
         const energy_possible = power_effective_max_kw * charging_duration;
         const reachable_percentage = Math.min(100, params.start_percentage + (energy_possible / params.capacity) * 100);
-        const extra_time_needed = max_charging_time_hours - charging_duration;
-
-        // 保底方案执行情况
-        const maxCost = calculateCost(start_time_hours, charging_duration, grid_power_max_kw, tariffs);
+        const maxCost = calculateCost(effective_start_hours, charging_duration, grid_power_max_kw, tariffs);
         const maxLossKw = (params.R * (params.max_current ** 2)) / 1000;
 
-        // 计算方案A (提前开始) 和方案B (延后结束) 的跨时段总电费
-        const early_start_hours = start_time_hours - extra_time_needed;
-        const late_end_hours = end_time_hours + extra_time_needed;
-        
-        const cost_early_start = calculateCost(early_start_hours, max_charging_time_hours, grid_power_max_kw, tariffs);
-        const cost_late_end = calculateCost(start_time_hours, max_charging_time_hours, grid_power_max_kw, tariffs);
+        const solutions = [];
+        let now_to_end = end_time_hours - current_time_hours;
+        if (now_to_end <= 0) now_to_end += 24;
+
+        // 【方案A】物理上允许的前提下，建议提前开始 (需判定当前时间是否来得及)
+        if (now_to_end >= max_charging_time_hours) {
+            let early_start = end_time_hours - max_charging_time_hours;
+            if (early_start < 0) early_start += 24;
+            solutions.push({
+                type: '优选', color: 'var(--primary)',
+                title: `提前至 ${formatTime(early_start)} 预约开始`,
+                desc: `到点自动断电。含提前时段的电价，总费用预估：¥${calculateCost(early_start, max_charging_time_hours, grid_power_max_kw, tariffs)}`
+            });
+        }
+
+        // 【方案B】保持原设定开始（或现在迟到的时间），一直充到满
+        let late_end = effective_start_hours + max_charging_time_hours;
+        solutions.push({
+            type: '备选', color: '#6b7280',
+            title: `延后至 ${formatTime(late_end)} 结束 (取消拔枪)`,
+            desc: `保持设定的规则，充满为止，含后续电价，总费用预估：¥${calculateCost(effective_start_hours, max_charging_time_hours, grid_power_max_kw, tariffs)}`
+        });
+
+        // 【方案C】如果你想现在立刻开始，到点强制断电
+        if (!time_lost && now_to_end > charging_duration) {
+            let charge_now = power_effective_max_kw * now_to_end;
+            let percent_now = Math.min(100, params.start_percentage + (charge_now / params.capacity) * 100);
+            
+            solutions.push({
+                type: '即刻', color: '#f59e0b',
+                title: `现在立刻执行，到 ${formatTime(end_time_hours)} 断电`,
+                desc: percent_now >= params.target_percentage 
+                    ? `可充满目标。含前半夜电价，总费用预估：¥${calculateCost(current_time_hours, max_charging_time_hours, grid_power_max_kw, tariffs)}`
+                    : `只能充至 ${percent_now.toFixed(1)}%。总费用预估：¥${calculateCost(current_time_hours, now_to_end, grid_power_max_kw, tariffs)}`
+            });
+        }
 
         return {
             error: "无法在设定时间内达成满电目标",
             reachable_percentage: Number(reachable_percentage.toFixed(1)),
-            early_start_time: formatTime(early_start_hours),
-            late_end_time: formatTime(late_end_hours),
-            cost_early_start: cost_early_start,  // 方案A的总电费
-            cost_late_end: cost_late_end,        // 方案B的总电费
+            solutions: solutions, // 将动态生成的方案数组丢给前端
             fallback_stats: {
                 current: params.max_current,
                 power_kw: Number(power_effective_max_kw.toFixed(2)),

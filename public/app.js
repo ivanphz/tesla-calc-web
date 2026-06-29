@@ -206,3 +206,36 @@ async function calculate() {
         document.getElementById('loading').style.display = 'none';
     }
 }
+
+// === 新增：时间输入框加减与智能吸附逻辑 ===
+function adjustTime(inputId, deltaMinutes) {
+    const input = document.getElementById(inputId);
+    if (!input || !input.value) return;
+    
+    let [h, m] = input.value.split(':').map(Number);
+    
+    if (deltaMinutes > 0) {
+        // 增加时间：如果当前不是5的倍数（如16:16），直接吸附到下一个5的倍数（16:20）
+        if (m % 5 !== 0) {
+            m = Math.ceil(m / 5) * 5;
+        } else {
+            m += deltaMinutes;
+        }
+    } else {
+        // 减少时间：如果当前不是5的倍数（如16:16），直接吸附到上一个5的倍数（16:15）
+        if (m % 5 !== 0) {
+            m = Math.floor(m / 5) * 5;
+        } else {
+            m += deltaMinutes;
+        }
+    }
+    
+    // 处理跨小时跨天进退位
+    while (m >= 60) { m -= 60; h += 1; }
+    while (m < 0) { m += 60; h -= 1; }
+    if (h >= 24) h -= 24;
+    if (h < 0) h += 24;
+    
+    input.value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    saveSettings();
+}

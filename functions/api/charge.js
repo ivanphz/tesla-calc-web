@@ -30,6 +30,10 @@ export async function onRequest(context) {
         start_minute: start_minute,
         end_hour: searchParams.has("end_hour") ? parseInt(searchParams.get("end_hour"), 10) : DEFAULTS.end_hour,
         end_minute: searchParams.has("end_minute") ? parseInt(searchParams.get("end_minute"), 10) : DEFAULTS.end_minute,
+        
+        current_hour: parseInt(searchParams.get("current_hour") || 0, 10),     // 新增
+        current_minute: parseInt(searchParams.get("current_minute") || 0, 10), // 新增
+        
         tariff_config: searchParams.get("tariff") || ""
     };
 

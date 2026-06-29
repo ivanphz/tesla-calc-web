@@ -139,6 +139,18 @@ async function calculate() {
     const startTime = document.getElementById('start-time').value.split(':');
     const endTime = document.getElementById('end-time').value.split(':');
     const useNow = document.getElementById('use-now').value;
+    // 新增：获取当前时间（沙盒或真实系统时间）
+    const useMock = document.getElementById('enable-mock-time').checked;
+    let currHour, currMinute;
+    if (useMock) {
+        const mockParts = document.getElementById('mock-time').value.split(':');
+        currHour = parseInt(mockParts[0]);
+        currMinute = parseInt(mockParts[1]);
+    } else {
+        const now = new Date();
+        currHour = now.getHours();
+        currMinute = now.getMinutes();
+    }
 
     const params = new URLSearchParams({
         start: start,
@@ -148,6 +160,8 @@ async function calculate() {
         start_minute: startTime[1],
         end_hour: endTime[0],
         end_minute: endTime[1],
+        current_hour: currHour,     // 传给后端的当前时
+        current_minute: currMinute, // 传给后端的当前分
         tariff: document.getElementById('tariff-config').value
     });
 

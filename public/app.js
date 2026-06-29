@@ -1,70 +1,108 @@
-// === 1. 页面加载时恢复历史设置 ===
-document.addEventListener('DOMContentLoaded', () => {
+// === 1. 页面加载初始化 ===
+document.addEventListener('DOMContentLoaded', async () => {
+    // A. 恢复本地历史配置（目标电量、时段等）
     const saved = localStorage.getItem('tesla_calc_prefs');
     if (saved) {
         const prefs = JSON.parse(saved);
-        
-        // 恢复电量
-        if (prefs.start) document.getElementById('start-battery').value = prefs.start;
         if (prefs.target) syncTarget(prefs.target);
-        
-        // 恢复时间
         if (prefs.startTime) document.getElementById('start-time').value = prefs.startTime;
         if (prefs.endTime) document.getElementById('end-time').value = prefs.endTime;
         if (prefs.useNow) document.getElementById('use-now').value = prefs.useNow;
-        
-        // 恢复高亮按钮
         if (prefs.activeTimeBtnId) {
             const btn = document.getElementById(prefs.activeTimeBtnId);
             if (btn) updateTimeBtnUI(btn);
         }
+        // 起始电量先用本地兜底
+        if (prefs.start) syncStart(prefs.start, false); 
+    }
+
+    // B. 从云端拉取车机实时电量
+    const syncStatus = document.getElementById('sync-status');
+    try {
+        syncStatus.innerText = "(同步中...)";
+        syncStatus.style.color = "#6b7280";
+        
+        const response = await fetch('/api/battery');
+        const data = await response.json();
+        
+        if (data && typeof data.battery === 'number') {
+            syncStart(data.battery, false);
+            syncStatus.innerText = "(✓ 实时车机数据)";
+            syncStatus.style.color = "#10b981"; // 绿色成功
+        } else {
+            syncStatus.innerText = "(使用本地记录)";
+        }
+    } catch (error) {
+        syncStatus.innerText = "(无法连接车机，使用本地记录)";
+        syncStatus.style.color = "#f59e0b"; // 橙色警告
     }
 });
 
-// === 2. 保存设置到本地 ===
 function saveSettings() {
-    // 找出当前激活的时间按钮（谷电/午间/从现在开始）
-    const timeBtnsContainer = document.getElementById('btn-time-night').parentElement;
-    const activeTimeBtn = timeBtnsContainer.querySelector('.active');
-    
+    const activeTimeBtn = document.querySelector('.quick-btns .active[id^="btn-time"]');
     const prefs = {
         start: document.getElementById('start-battery').value,
-        target: document.getElementById('target-slider').value,
+        target: document.getElementById('target-battery').value,
         startTime: document.getElementById('start-time').value,
         endTime: document.getElementById('end-time').value,
         useNow: document.getElementById('use-now').value,
         activeTimeBtnId: activeTimeBtn ? activeTimeBtn.id : 'btn-time-night'
     };
-    
     localStorage.setItem('tesla_calc_prefs', JSON.stringify(prefs));
 }
 
-// === 3. UI 交互逻辑 ===
-function adjustStart(delta) {
-    const input = document.getElementById('start-battery');
-    let val = parseInt(input.value) + delta;
-    if(val >= 0 && val < 100) {
-        input.value = val;
-        saveSettings(); // 数值变动，保存记忆
+// === 2. 起始电量同步逻辑 (大步进器) ===
+function syncStart(val, manual = true) {
+    let v = parseInt(val);
+    if (isNaN(v)) v = 0;
+    if (v < 0) v = 0;
+    if (v > 99) v = 99;
+
+    document.getElementById('start-battery').value = v;
+    saveSettings();
+    
+    // 如果是手动点击修改的，去掉“实时数据”标签，避免误导
+    if (manual) {
+        const status = document.getElementById('sync-status');
+        status.innerText = "(已手动修改)";
+        status.style.color = "#6b7280";
     }
 }
 
-function syncTarget(val) {
-    document.getElementById('target-slider').value = val;
-    document.getElementById('target-val-display').innerText = val + '%';
-    
-    document.querySelectorAll('#target-presets button').forEach(btn => {
-        btn.classList.toggle('active', parseInt(btn.innerText) === parseInt(val));
-    });
-    saveSettings(); // 数值变动，保存记忆
+function adjustStart(delta) {
+    const current = parseInt(document.getElementById('start-battery').value) || 0;
+    syncStart(current + delta, true);
 }
 
+// === 3. 目标电量同步逻辑 (滑块 + 1%步进 + 预设) ===
+function syncTarget(val) {
+    let v = parseInt(val);
+    if (isNaN(v)) v = 80;
+    if (v < 50) v = 50;
+    if (v > 100) v = 100;
+
+    document.getElementById('target-battery').value = v; 
+    document.getElementById('target-slider').value = v;
+    document.getElementById('target-val-display').innerText = v + '%';
+    
+    document.querySelectorAll('#target-presets button').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.innerText) === v);
+    });
+    saveSettings();
+}
+
+function adjustTarget(delta) {
+    const current = parseInt(document.getElementById('target-battery').value) || 80;
+    syncTarget(current + delta);
+}
+
+// === 4. 时间段设置逻辑 ===
 function setTimeSlot(start, end, btn) {
     document.getElementById('start-time').value = start;
     document.getElementById('end-time').value = end;
     document.getElementById('use-now').value = 'false';
     updateTimeBtnUI(btn);
-    saveSettings(); // 数值变动，保存记忆
+    saveSettings();
 }
 
 function setNowAsStart(btn) {
@@ -74,23 +112,20 @@ function setNowAsStart(btn) {
     const mm = String(now.getMinutes()).padStart(2, '0');
     document.getElementById('start-time').value = `${hh}:${mm}`;
     updateTimeBtnUI(btn);
-    saveSettings(); // 数值变动，保存记忆
+    saveSettings();
 }
 
 function updateTimeBtnUI(activeBtn) {
-    document.getElementById('btn-time-night').classList.remove('active');
-    document.getElementById('btn-time-noon').classList.remove('active');
-    document.getElementById('btn-time-now').classList.remove('active');
+    document.querySelectorAll('[id^="btn-time"]').forEach(btn => btn.classList.remove('active'));
     if (activeBtn) activeBtn.classList.add('active');
 }
 
-// === 4. API 请求与计算逻辑 ===
+// === 5. 调用后端计算 API ===
 async function calculate() {
-    // 点击计算时，做一次兜底保存
     saveSettings(); 
 
     const start = document.getElementById('start-battery').value;
-    const target = document.getElementById('target-slider').value;
+    const target = document.getElementById('target-battery').value;
     const startTime = document.getElementById('start-time').value.split(':');
     const endTime = document.getElementById('end-time').value.split(':');
     const useNow = document.getElementById('use-now').value;
@@ -115,13 +150,11 @@ async function calculate() {
         document.getElementById('loading').style.display = 'none';
 
         if (data.result.error) {
-            // 触发警告状态
             document.getElementById('warning-result').style.display = 'block';
             document.getElementById('warn-reachable').innerText = data.result.reachable_percentage.toFixed(1) + '%';
             document.getElementById('warn-early').innerText = data.result.early_start_time;
             document.getElementById('warn-late').innerText = data.result.late_end_time;
         } else {
-            // 正常显示结果
             document.getElementById('normal-result').style.display = 'block';
             document.getElementById('res-current').innerText = data.result.optimal_current + ' A';
             document.getElementById('res-duration').innerText = data.result.charging_duration + ' 小时';

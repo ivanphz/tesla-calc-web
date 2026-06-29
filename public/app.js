@@ -16,25 +16,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (prefs.start) syncStart(prefs.start, false); 
     }
 
-    // B. 从云端拉取车机实时电量
+    // B. 页面加载时自动执行一次拉取
+    await fetchRealTimeBattery();
+});
+
+// === 独立出来的：从云端拉取车机实时电量 ===
+async function fetchRealTimeBattery() {
     const syncStatus = document.getElementById('sync-status');
     try {
         syncStatus.innerText = "(同步中...)";
         syncStatus.style.color = "#6b7280";
         
-        const response = await fetch('/api/battery');
+        // 加上时间戳防止浏览器缓存请求
+        const response = await fetch(`/api/battery?t=${new Date().getTime()}`);
         const data = await response.json();
         
         if (data && typeof data.battery === 'number') {
-            syncStart(data.battery, false);
+            syncStart(data.battery, false); // false 表示这是系统同步，非手动
             syncStatus.innerText = "(✓ 实时车机数据)";
             syncStatus.style.color = "#10b981"; // 绿色成功
         } else {
-            syncStatus.innerText = "(使用本地记录)";
+            syncStatus.innerText = "(获取失败，使用本地记录)";
+            syncStatus.style.color = "#f59e0b"; // 橙色
         }
     } catch (error) {
-        syncStatus.innerText = "(无法连接车机，使用本地记录)";
-        syncStatus.style.color = "#f59e0b"; // 橙色警告
+        syncStatus.innerText = "(无法连接云端，使用本地记录)";
+        syncStatus.style.color = "#f59e0b"; // 橙色
     }
 });
 

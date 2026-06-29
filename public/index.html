@@ -15,7 +15,11 @@
         
         <!-- 当前电量：客观事实，大面板居中，多档位微调 -->
         <div class="control-group">
-            <label>当前电量 (%) <span id="sync-status" style="font-size: 0.85rem; font-weight: normal; margin-left: 8px;"></span></label>
+            <label style="display: flex; align-items: center;">
+                当前电量 (%) 
+                <span id="sync-status" style="font-size: 0.85rem; font-weight: normal; margin-left: 8px;"></span>
+                <a href="javascript:void(0)" onclick="fetchRealTimeBattery()" style="font-size: 0.85rem; margin-left: auto; color: var(--primary); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; background: white;">↻ 还原车机电量</a>
+            </label>
             <div class="stepper-large">
                 <button type="button" onclick="adjustStart(-10)">-10</button>
                 <button type="button" onclick="adjustStart(-5)">-5</button>

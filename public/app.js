@@ -1,4 +1,9 @@
+// === 1. 页面加载初始化 ===
 document.addEventListener('DOMContentLoaded', async () => {
+    // A. 刚打开网页时，立刻初始化一次沙盒时间，防止出现 --:--
+    syncLocalTime();
+
+    // B. 恢复本地历史配置
     const saved = localStorage.getItem('tesla_calc_prefs');
     if (saved) {
         const prefs = JSON.parse(saved);
@@ -13,30 +18,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (prefs.start) syncStart(prefs.start, false); 
     }
     
-    function syncLocalTime() {
-    const now = new Date();
-    
-    // 引入真实场景的“操作时间”：当前时间直接往后加 3 分钟
-    now.setMinutes(now.getMinutes() + 3);
-    
-    let h = now.getHours();
-    let m = now.getMinutes();
-    
-    // 强制向上进位 (Math.ceil) 到最近的 5 分钟档位
-    // 例如：原时间 15:51 -> 缓冲后 15:54 -> 进位后 15:55
-    // 例如：原时间 15:53 -> 缓冲后 15:56 -> 进位后 16:00
-    m = Math.ceil(m / 5) * 5;
-    
-    if (m === 60) {
-        m = 0;
-        h = (h + 1) % 24;
-    }
-    
-    document.getElementById('mock-time').value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-    
+    // C. 拉取云端车机电量
     await fetchRealTimeBattery();
 });
+
+// === 核心：获取真实当前时间 + 3分钟操作缓冲 ===
+function syncLocalTime() {
+    const now = new Date();
+    // 只做一件事：加3分钟。不强行做任何四舍五入或进位。
+    now.setMinutes(now.getMinutes() + 3);
+    
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    
+    const timeInput = document.getElementById('mock-time');
+    if (timeInput) {
+        timeInput.value = `${h}:${m}`;
+    }
+}
 
 async function fetchRealTimeBattery() {
     const syncStatus = document.getElementById('sync-status');
@@ -57,11 +56,6 @@ async function fetchRealTimeBattery() {
         syncStatus.innerText = "(连接失败，使用本地记录)";
         syncStatus.style.color = "#f59e0b";
     }
-}
-
-function syncLocalTime() {
-    const now = new Date();
-    document.getElementById('mock-time').value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 }
 
 function toggleTariffSettings() {
@@ -142,12 +136,15 @@ async function calculate() {
     // 处理时间传递 (默认使用真实现实时间，除非开启沙盒)
     const useMock = document.getElementById('enable-mock-time').checked;
     let currHour, currMinute;
+    
     if (useMock) {
         const mockParts = document.getElementById('mock-time').value.split(':');
         currHour = parseInt(mockParts[0]);
         currMinute = parseInt(mockParts[1]);
     } else {
+        // 如果没开启沙盒，默认传递此时此刻真实的“操作时间”
         const now = new Date();
+        now.setMinutes(now.getMinutes() + 3);
         currHour = now.getHours();
         currMinute = now.getMinutes();
     }

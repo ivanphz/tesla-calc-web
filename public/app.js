@@ -183,31 +183,18 @@ async function calculate() {
             document.getElementById('warn-fallback-energy').innerText = fb.energy_added.toFixed(1) + ' kWh';
             document.getElementById('warn-fallback-cost').innerText = '¥ ' + fb.cost.toFixed(2);
             
-            // 动态判定展示方案
+            // 动态渲染方案列表
             const ul = document.getElementById('warn-solutions-list');
             ul.innerHTML = ''; 
-
-            if (useNow === 'true') {
-                // 场景二：即插即充（彻底隐藏提前方案，只推荐延后）
-                ul.innerHTML = `
-                    <li style="margin-bottom: 8px; padding-left: 10px; border-left: 3px solid var(--primary);">
-                        <strong style="color: var(--text-main);">持续满载充电至 ${data.result.late_end_time} 结束</strong> 
-                        <br><span style="font-size: 0.9rem; color: #6b7280;">(当前时间无法提前，已包含跨越时段的电价) 充满总费用：<strong style="color: #10b981;">¥ ${data.result.cost_late_end.toFixed(2)}</strong></span>
+            
+            data.result.solutions.forEach(sol => {
+                ul.innerHTML += `
+                    <li style="margin-bottom: 14px; padding-left: 10px; border-left: 4px solid ${sol.color};">
+                        <span style="background: ${sol.color}; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; margin-right: 5px; vertical-align: text-bottom;">${sol.type}</span>
+                        <strong style="color: var(--text-main); font-size: 1.05rem;">${sol.title}</strong>
+                        <br><span style="font-size: 0.9rem; color: #6b7280;">${sol.desc}</span>
                     </li>`;
-            } else {
-                // 场景一：预约充电（重点推荐提前方案A，备选展示延后方案B）
-                ul.innerHTML = `
-                    <li style="margin-bottom: 14px; padding-left: 10px; border-left: 4px solid var(--primary);">
-                        <span style="background: var(--primary); color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; margin-right: 5px; vertical-align: text-bottom;">优选</span>
-                        <strong style="color: var(--text-main); font-size: 1.05rem;">提前至 ${data.result.early_start_time} 预约开始</strong>
-                        <br><span style="font-size: 0.9rem; color: #6b7280;">(到点自动断电。提前的时段已计入实时电价) 充满总费用：<strong style="color: #10b981;">¥ ${data.result.cost_early_start.toFixed(2)}</strong></span>
-                    </li>
-                    <li style="padding-left: 10px; border-left: 4px solid #d1d5db; opacity: 0.8;">
-                        <span style="background: #d1d5db; color: #374151; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; margin-right: 5px; vertical-align: text-bottom;">备选</span>
-                        <strong style="color: var(--text-main);">延后至 ${data.result.late_end_time} 结束</strong>
-                        <br><span style="font-size: 0.9rem; color: #6b7280;">(保持预约时间不变，早晨不拔枪) 充满总费用：<strong style="color: #10b981;">¥ ${data.result.cost_late_end.toFixed(2)}</strong></span>
-                    </li>`;
-            }
+            });
         } else {
             // == 正常满电的状态渲染 ==
             document.getElementById('normal-result').style.display = 'block';

@@ -1,4 +1,3 @@
-// === 1. 页面加载初始化 ===
 document.addEventListener('DOMContentLoaded', async () => {
     const saved = localStorage.getItem('tesla_calc_prefs');
     if (saved) {
@@ -8,27 +7,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (prefs.endTime) document.getElementById('end-time').value = prefs.endTime;
         if (prefs.useNow) document.getElementById('use-now').value = prefs.useNow;
         if (prefs.tariff) document.getElementById('tariff-config').value = prefs.tariff;
-        
         if (prefs.activeTimeBtnId) {
             const btn = document.getElementById(prefs.activeTimeBtnId);
             if (btn) updateTimeBtnUI(btn);
         }
         if (prefs.start) syncStart(prefs.start, false); 
     }
-
     await fetchRealTimeBattery();
 });
 
-// === 从云端拉取车机实时电量 ===
 async function fetchRealTimeBattery() {
     const syncStatus = document.getElementById('sync-status');
     try {
         syncStatus.innerText = "(同步中...)";
         syncStatus.style.color = "#6b7280";
-        
         const response = await fetch(`/api/battery?t=${new Date().getTime()}`);
         const data = await response.json();
-        
         if (data && typeof data.battery === 'number') {
             syncStart(data.battery, false);
             syncStatus.innerText = "(✓ 实时车机数据)";
@@ -62,16 +56,13 @@ function saveSettings() {
     localStorage.setItem('tesla_calc_prefs', JSON.stringify(prefs));
 }
 
-// === 2. 起始电量同步 ===
 function syncStart(val, manual = true) {
     let v = parseInt(val);
     if (isNaN(v)) v = 0;
     if (v < 0) v = 0;
     if (v > 99) v = 99;
-
     document.getElementById('start-battery').value = v;
     saveSettings();
-    
     if (manual) {
         const status = document.getElementById('sync-status');
         status.innerText = "(已手动修改)";
@@ -84,17 +75,14 @@ function adjustStart(delta) {
     syncStart(current + delta, true);
 }
 
-// === 3. 目标电量同步 ===
 function syncTarget(val) {
     let v = parseInt(val);
     if (isNaN(v)) v = 80;
     if (v < 50) v = 50;
     if (v > 100) v = 100;
-
     document.getElementById('target-battery').value = v; 
     document.getElementById('target-slider').value = v;
     document.getElementById('target-val-display').innerText = v + '%';
-    
     document.querySelectorAll('#target-presets button').forEach(btn => {
         btn.classList.toggle('active', parseInt(btn.innerText) === v);
     });
@@ -106,7 +94,6 @@ function adjustTarget(delta) {
     syncTarget(current + delta);
 }
 
-// === 4. 时间段设置 ===
 function setTimeSlot(start, end, btn) {
     document.getElementById('start-time').value = start;
     document.getElementById('end-time').value = end;
@@ -118,9 +105,7 @@ function setTimeSlot(start, end, btn) {
 function setNowAsStart(btn) {
     document.getElementById('use-now').value = 'true';
     const now = new Date();
-    const hh = String(now.getHours()).padStart(2, '0');
-    const mm = String(now.getMinutes()).padStart(2, '0');
-    document.getElementById('start-time').value = `${hh}:${mm}`;
+    document.getElementById('start-time').value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     updateTimeBtnUI(btn);
     saveSettings();
 }
@@ -130,16 +115,15 @@ function updateTimeBtnUI(activeBtn) {
     if (activeBtn) activeBtn.classList.add('active');
 }
 
-// === 5. 调用后端计算 API ===
 async function calculate() {
     saveSettings(); 
-
     const start = document.getElementById('start-battery').value;
     const target = document.getElementById('target-battery').value;
     const startTime = document.getElementById('start-time').value.split(':');
     const endTime = document.getElementById('end-time').value.split(':');
     const useNow = document.getElementById('use-now').value;
-    // 新增：获取当前时间（沙盒或真实系统时间）
+
+    // 获取当前时间（真实 or 沙盒）
     const useMock = document.getElementById('enable-mock-time').checked;
     let currHour, currMinute;
     if (useMock) {
@@ -160,8 +144,8 @@ async function calculate() {
         start_minute: startTime[1],
         end_hour: endTime[0],
         end_minute: endTime[1],
-        current_hour: currHour,     // 传给后端的当前时
-        current_minute: currMinute, // 传给后端的当前分
+        current_hour: currHour,
+        current_minute: currMinute,
         tariff: document.getElementById('tariff-config').value
     });
 
@@ -175,7 +159,6 @@ async function calculate() {
         document.getElementById('loading').style.display = 'none';
 
         if (data.result.error) {
-            // == 充不满的状态渲染 ==
             document.getElementById('warning-result').style.display = 'block';
             document.getElementById('warn-reachable').innerText = data.result.reachable_percentage.toFixed(1) + '%';
             
@@ -183,10 +166,10 @@ async function calculate() {
             document.getElementById('warn-fallback-energy').innerText = fb.energy_added.toFixed(1) + ' kWh';
             document.getElementById('warn-fallback-cost').innerText = '¥ ' + fb.cost.toFixed(2);
             
-            // 动态渲染方案列表
             const ul = document.getElementById('warn-solutions-list');
             ul.innerHTML = ''; 
             
+            // 动态渲染后端下发的最优方案
             data.result.solutions.forEach(sol => {
                 ul.innerHTML += `
                     <li style="margin-bottom: 14px; padding-left: 10px; border-left: 4px solid ${sol.color};">
@@ -196,13 +179,11 @@ async function calculate() {
                     </li>`;
             });
         } else {
-            // == 正常满电的状态渲染 ==
             document.getElementById('normal-result').style.display = 'block';
             document.getElementById('res-current').innerText = data.result.optimal_current + ' A';
             document.getElementById('res-duration').innerText = data.result.charging_duration + ' 小时';
             document.getElementById('res-power').innerText = data.result.effective_power_kw + ' kW';
             document.getElementById('res-loss').innerText = data.result.loss_percentage + ' %';
-            
             document.getElementById('res-energy').innerText = data.result.energy_added.toFixed(1) + ' kWh';
             document.getElementById('res-cost').innerText = '¥ ' + data.result.cost.toFixed(2);
         }

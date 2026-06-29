@@ -1,0 +1,23 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  # 允许在 GitHub Actions 页面手动点击按钮触发部署
+  workflow_dispatch: 
+  # (可选) 如果你想每次 push 代码也自动部署，可以取消下面两行的注释
+  # push:
+  #   branches: [ "main" ] 
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          # 核心修改：指定 public 为静态部署目录
+          command: pages deploy public --project-name=tesla-calc-web

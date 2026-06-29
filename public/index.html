@@ -13,7 +13,6 @@
     <div class="panel">
         <h2>⚡ 充电参数设置</h2>
         
-        <!-- 当前电量：客观事实，大面板居中，多档位微调 -->
         <div class="control-group">
             <label style="display: flex; align-items: center;">
                 当前电量 (%) 
@@ -24,16 +23,13 @@
                 <button type="button" onclick="adjustStart(-10)">-10</button>
                 <button type="button" onclick="adjustStart(-5)">-5</button>
                 <button type="button" onclick="adjustStart(-1)">-1</button>
-                
                 <input type="number" id="start-battery" value="30" min="0" max="99" onchange="syncStart(this.value)">
-                
                 <button type="button" onclick="adjustStart(1)">+1</button>
                 <button type="button" onclick="adjustStart(5)">+5</button>
                 <button type="button" onclick="adjustStart(10)">+10</button>
             </div>
         </div>
 
-        <!-- 目标电量：主观预期，滑块 + 快捷预设 + 1%步进 -->
         <div class="control-group" style="margin-top: 32px;">
             <label>目标电量: <span id="target-val-display" style="color: var(--primary);">80%</span></label>
             <div class="stepper" style="margin-bottom: 12px;">
@@ -41,9 +37,7 @@
                 <input type="number" id="target-battery" value="80" min="50" max="100" onchange="syncTarget(this.value)">
                 <button type="button" onclick="adjustTarget(1)">+</button>
             </div>
-            
             <input type="range" id="target-slider" min="50" max="100" value="80" step="1" oninput="syncTarget(this.value)">
-            
             <div class="quick-btns" id="target-presets">
                 <button type="button" onclick="syncTarget(80)" class="active">80%</button>
                 <button type="button" onclick="syncTarget(85)">85%</button>
@@ -67,6 +61,19 @@
                 <input type="hidden" id="use-now" value="false">
             </div>
         </div>
+        
+        <!-- 新增：分时电价配置 -->
+        <div class="control-group" style="margin-top: 32px;">
+            <label style="display: flex; justify-content: space-between; cursor: pointer;" onclick="toggleTariffSettings()">
+                💰 分时电价配置 <span style="font-size: 0.85rem; color: #6b7280;">(点击展开/收起)</span>
+            </label>
+            <textarea id="tariff-config" rows="5" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-family: monospace; display: none;" onchange="saveSettings()">
+00:00-07:00=0.3783
+07:00-11:00=0.5783
+11:00-13:00=0.3783
+13:00-22:00=0.5783
+22:00-00:00=0.3783</textarea>
+        </div>
 
         <button class="btn-calc" onclick="calculate()">开始计算</button>
     </div>
@@ -74,35 +81,33 @@
     <!-- 右侧：计算结果 -->
     <div class="panel">
         <h2>📊 计算结果</h2>
-        
         <div id="loading" style="display: none; text-align: center; padding: 20px;">计算中...</div>
         
         <div id="normal-result" class="result-box">
-            <div class="result-item">
-                <span>建议充电电流</span>
-                <span class="result-val" id="res-current">-- A</span>
-            </div>
-            <div class="result-item">
-                <span>预计充电时长</span>
-                <span class="result-val" id="res-duration">-- 小时</span>
-            </div>
-            <div class="result-item">
-                <span>有效充电功率</span>
-                <span class="result-val" id="res-power">-- kW</span>
-            </div>
-            <div class="result-item">
-                <span>线损比例</span>
-                <span class="result-val" id="res-loss" style="color: #6b7280;">-- %</span>
-            </div>
+            <div class="result-item"><span>建议充电电流</span><span class="result-val" id="res-current">-- A</span></div>
+            <div class="result-item"><span>充入电量估算</span><span class="result-val" id="res-energy">-- kWh</span></div>
+            <div class="result-item"><span>预计充电时长</span><span class="result-val" id="res-duration">-- 小时</span></div>
+            <div class="result-item"><span>预估充电总费</span><span class="result-val" id="res-cost" style="color: #10b981;">¥ --</span></div>
+            <div class="result-item"><span>有效充电功率</span><span class="result-val" id="res-power" style="color: #6b7280; font-size: 0.95rem;">-- kW</span></div>
+            <div class="result-item"><span>发热线损比例</span><span class="result-val" id="res-loss" style="color: #6b7280; font-size: 0.95rem;">-- %</span></div>
         </div>
 
         <div id="warning-result" class="warning-box">
             <h4>⚠️ 无法在设定时间内达成目标</h4>
-            <p>按 32A 最大电流充电，当前时段内只能充至 <strong id="warn-reachable">--%</strong>。</p>
-            <p>要达到目标，您需要：</p>
+            <p style="margin-bottom: 5px;">按 32A 最大电流充电，当前时段内只能充至 <strong id="warn-reachable" style="font-size: 1.2rem; color: #dc2626;">--%</strong>。</p>
+            
+            <!-- 保底方案数据展示 -->
+            <div style="background: rgba(255,255,255,0.6); padding: 10px; border-radius: 6px; margin: 10px 0; font-size: 0.95rem; border: 1px dashed var(--warning-border);">
+                <strong style="display: block; margin-bottom: 6px;">💡 当前可用时段保底执行情况：</strong>
+                <div style="display: flex; justify-content: space-between;"><span>执行电流：</span><strong id="warn-fallback-current">-- A</strong></div>
+                <div style="display: flex; justify-content: space-between;"><span>预估费用：</span><strong id="warn-fallback-cost" style="color: #10b981;">¥ --</strong></div>
+                <div style="display: flex; justify-content: space-between;"><span>充入电量：</span><strong id="warn-fallback-energy">-- kWh</strong></div>
+            </div>
+
+            <p style="margin: 10px 0 5px 0;">如果您必须达到满电目标，需要调整时段：</p>
             <ul>
-                <li>方案 A：提前至 <strong id="warn-early">--:--</strong> 开始充电（保持结束时间）。</li>
-                <li>方案 B：延后至 <strong id="warn-late">--:--</strong> 结束充电（保持开始时间）。</li>
+                <li>提前至 <strong id="warn-early">--:--</strong> 开始（保持结束时间不变）</li>
+                <li>延后至 <strong id="warn-late">--:--</strong> 结束（保持开始时间不变）</li>
             </ul>
         </div>
     </div>

@@ -1,6 +1,5 @@
 // === 1. 页面加载初始化 ===
 document.addEventListener('DOMContentLoaded', async () => {
-    // A. 恢复本地历史配置（目标电量、时段等）
     const saved = localStorage.getItem('tesla_calc_prefs');
     if (saved) {
         const prefs = JSON.parse(saved);
@@ -8,42 +7,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (prefs.startTime) document.getElementById('start-time').value = prefs.startTime;
         if (prefs.endTime) document.getElementById('end-time').value = prefs.endTime;
         if (prefs.useNow) document.getElementById('use-now').value = prefs.useNow;
-        // ... 在 if (saved) { ... } 里面加上：
         if (prefs.tariff) document.getElementById('tariff-config').value = prefs.tariff;
+        
         if (prefs.activeTimeBtnId) {
             const btn = document.getElementById(prefs.activeTimeBtnId);
             if (btn) updateTimeBtnUI(btn);
         }
-        // 起始电量先用本地兜底
         if (prefs.start) syncStart(prefs.start, false); 
     }
 
-    // B. 页面加载时自动执行一次拉取
     await fetchRealTimeBattery();
 });
 
-// === 独立出来的：从云端拉取车机实时电量 ===
+// === 从云端拉取车机实时电量 ===
 async function fetchRealTimeBattery() {
     const syncStatus = document.getElementById('sync-status');
     try {
         syncStatus.innerText = "(同步中...)";
         syncStatus.style.color = "#6b7280";
         
-        // 加上时间戳防止浏览器缓存请求
         const response = await fetch(`/api/battery?t=${new Date().getTime()}`);
         const data = await response.json();
         
         if (data && typeof data.battery === 'number') {
-            syncStart(data.battery, false); // false 表示这是系统同步，非手动
+            syncStart(data.battery, false);
             syncStatus.innerText = "(✓ 实时车机数据)";
-            syncStatus.style.color = "#10b981"; // 绿色成功
+            syncStatus.style.color = "#10b981";
         } else {
             syncStatus.innerText = "(获取失败，使用本地记录)";
-            syncStatus.style.color = "#f59e0b"; // 橙色
+            syncStatus.style.color = "#f59e0b";
         }
     } catch (error) {
         syncStatus.innerText = "(无法连接云端，使用本地记录)";
-        syncStatus.style.color = "#f59e0b"; // 橙色
+        syncStatus.style.color = "#f59e0b";
     }
 }
 
@@ -60,13 +56,13 @@ function saveSettings() {
         startTime: document.getElementById('start-time').value,
         endTime: document.getElementById('end-time').value,
         useNow: document.getElementById('use-now').value,
-        activeTimeBtnId: activeTimeBtn ? activeTimeBtn.id : 'btn-time-night'
+        activeTimeBtnId: activeTimeBtn ? activeTimeBtn.id : 'btn-time-night',
         tariff: document.getElementById('tariff-config').value
     };
     localStorage.setItem('tesla_calc_prefs', JSON.stringify(prefs));
 }
 
-// === 2. 起始电量同步逻辑 (大步进器) ===
+// === 2. 起始电量同步 ===
 function syncStart(val, manual = true) {
     let v = parseInt(val);
     if (isNaN(v)) v = 0;
@@ -76,7 +72,6 @@ function syncStart(val, manual = true) {
     document.getElementById('start-battery').value = v;
     saveSettings();
     
-    // 如果是手动点击修改的，去掉“实时数据”标签，避免误导
     if (manual) {
         const status = document.getElementById('sync-status');
         status.innerText = "(已手动修改)";
@@ -89,7 +84,7 @@ function adjustStart(delta) {
     syncStart(current + delta, true);
 }
 
-// === 3. 目标电量同步逻辑 (滑块 + 1%步进 + 预设) ===
+// === 3. 目标电量同步 ===
 function syncTarget(val) {
     let v = parseInt(val);
     if (isNaN(v)) v = 80;
@@ -111,7 +106,7 @@ function adjustTarget(delta) {
     syncTarget(current + delta);
 }
 
-// === 4. 时间段设置逻辑 ===
+// === 4. 时间段设置 ===
 function setTimeSlot(start, end, btn) {
     document.getElementById('start-time').value = start;
     document.getElementById('end-time').value = end;
@@ -153,7 +148,7 @@ async function calculate() {
         start_minute: startTime[1],
         end_hour: endTime[0],
         end_minute: endTime[1],
-        tariff: document.getElementById('tariff-config').value // 传给后端
+        tariff: document.getElementById('tariff-config').value
     });
 
     document.getElementById('normal-result').style.display = 'none';
@@ -166,26 +161,22 @@ async function calculate() {
         document.getElementById('loading').style.display = 'none';
 
         if (data.result.error) {
-            // == 充不满的状态渲染 ==
             document.getElementById('warning-result').style.display = 'block';
             document.getElementById('warn-reachable').innerText = data.result.reachable_percentage.toFixed(1) + '%';
             document.getElementById('warn-early').innerText = data.result.early_start_time;
             document.getElementById('warn-late').innerText = data.result.late_end_time;
             
-            // 渲染保底方案
             const fb = data.result.fallback_stats;
             document.getElementById('warn-fallback-current').innerText = fb.current + ' A';
             document.getElementById('warn-fallback-cost').innerText = '¥ ' + fb.cost.toFixed(2);
             document.getElementById('warn-fallback-energy').innerText = fb.energy_added.toFixed(1) + ' kWh';
         } else {
-            // == 正常满电的状态渲染 ==
             document.getElementById('normal-result').style.display = 'block';
             document.getElementById('res-current').innerText = data.result.optimal_current + ' A';
             document.getElementById('res-duration').innerText = data.result.charging_duration + ' 小时';
             document.getElementById('res-power').innerText = data.result.effective_power_kw + ' kW';
             document.getElementById('res-loss').innerText = data.result.loss_percentage + ' %';
             
-            // 渲染新增的电量和费用
             document.getElementById('res-energy').innerText = data.result.energy_added.toFixed(1) + ' kWh';
             document.getElementById('res-cost').innerText = '¥ ' + data.result.cost.toFixed(2);
         }
@@ -193,3 +184,4 @@ async function calculate() {
         alert('计算出错，请检查网络或后端配置。');
         document.getElementById('loading').style.display = 'none';
     }
+}

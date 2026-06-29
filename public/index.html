@@ -9,16 +9,17 @@
 <body>
 
 <div class="container">
-    <!-- 左侧：参数控制 -->
     <div class="panel">
         <h2>⚡ 充电参数设置</h2>
-        <!-- 新增：沙盒时间模拟器，用于测试特定时间点的碰撞 -->
+        
+        <!-- 沙盒时间模拟器 -->
         <div style="background: #eef2ff; padding: 12px; border-radius: 8px; margin-bottom: 24px; font-size: 0.95rem; display: flex; align-items: center; justify-content: space-between; border: 1px dashed #a5b4fc;">
             <label style="margin: 0; font-weight: 600; cursor: pointer; color: #4338ca;">
-                <input type="checkbox" id="enable-mock-time" style="margin-right: 6px;"> ⏱️ 开启沙盒时间 (用于测试)
+                <input type="checkbox" id="enable-mock-time" style="margin-right: 6px;"> ⏱️ 开启沙盒时间测试
             </label>
-            <input type="time" id="mock-time" value="20:30" style="padding: 4px 8px; border: 1px solid #c7d2fe; border-radius: 4px; outline: none; background: white; color: #4338ca; font-weight: bold;">
+            <input type="time" id="mock-time" value="03:00" style="padding: 4px 8px; border: 1px solid #c7d2fe; border-radius: 4px; outline: none; background: white; color: #4338ca; font-weight: bold;">
         </div>
+
         <div class="control-group">
             <label style="display: flex; align-items: center;">
                 当前电量 (%) 
@@ -37,17 +38,17 @@
         </div>
 
         <div class="control-group" style="margin-top: 32px;">
-            <label>目标电量: <span id="target-val-display" style="color: var(--primary);">80%</span></label>
+            <label>目标电量: <span id="target-val-display" style="color: var(--primary);">90%</span></label>
             <div class="stepper" style="margin-bottom: 12px;">
                 <button type="button" onclick="adjustTarget(-1)">-</button>
-                <input type="number" id="target-battery" value="80" min="50" max="100" onchange="syncTarget(this.value)">
+                <input type="number" id="target-battery" value="90" min="50" max="100" onchange="syncTarget(this.value)">
                 <button type="button" onclick="adjustTarget(1)">+</button>
             </div>
-            <input type="range" id="target-slider" min="50" max="100" value="80" step="1" oninput="syncTarget(this.value)">
+            <input type="range" id="target-slider" min="50" max="100" value="90" step="1" oninput="syncTarget(this.value)">
             <div class="quick-btns" id="target-presets">
-                <button type="button" onclick="syncTarget(80)" class="active">80%</button>
+                <button type="button" onclick="syncTarget(80)">80%</button>
                 <button type="button" onclick="syncTarget(85)">85%</button>
-                <button type="button" onclick="syncTarget(90)">90%</button>
+                <button type="button" onclick="syncTarget(90)" class="active">90%</button>
                 <button type="button" onclick="syncTarget(95)">95%</button>
                 <button type="button" onclick="syncTarget(100)">100%</button>
             </div>
@@ -82,7 +83,6 @@
         <button class="btn-calc" onclick="calculate()">开始计算</button>
     </div>
 
-    <!-- 右侧：计算结果 -->
     <div class="panel">
         <h2>📊 计算结果</h2>
         <div id="loading" style="display: none; text-align: center; padding: 20px;">计算中...</div>
@@ -100,15 +100,15 @@
             <h4>⚠️ 无法在设定时间内达成目标</h4>
             
             <div style="background: rgba(255,255,255,0.6); padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 0.95rem; border: 1px dashed var(--warning-border);">
-                <strong style="display: block; margin-bottom: 8px;">💡 仅在当前时段内充电 (到点断电):</strong>
+                <strong style="display: block; margin-bottom: 8px;">💡 仅在当前设定时段内 (到点断电):</strong>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>按 32A 满载只能充至：</span><strong id="warn-reachable" style="color: #dc2626; font-size: 1.1rem;">--%</strong></div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>该时段充入电量：</span><strong id="warn-fallback-energy">-- kWh</strong></div>
                 <div style="display: flex; justify-content: space-between;"><span>该时段预估电费：</span><strong id="warn-fallback-cost" style="color: #10b981;">¥ --</strong></div>
             </div>
 
-            <p style="margin: 14px 0 8px 0; font-weight: 600;">✅ 为达到设定的满电目标，建议：</p>
+            <p style="margin: 14px 0 8px 0; font-weight: 600;">✅ 为达到设定的满电目标，智能建议：</p>
             <ul id="warn-solutions-list" style="margin: 0; padding-left: 0; list-style: none;">
-                <!-- JS 会根据“即插即用”还是“预约充电”在这里动态注入方案 -->
+                <!-- 保持空标签即可，前端 JS 会自动往里面动态插入最优方案 -->
             </ul>
         </div>
     </div>

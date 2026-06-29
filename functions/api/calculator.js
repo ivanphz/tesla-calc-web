@@ -1,6 +1,5 @@
 import { DEFAULTS, CHARGING_MODELS } from './config.js';
 
-// 解析时段电价字符串 (支持 22:00-08:00 这种跨天格式)
 function parseTariffs(tariffStr) {
     if (!tariffStr) return [];
     const tariffs = [];
@@ -23,28 +22,23 @@ function parseTariffs(tariffStr) {
     return tariffs;
 }
 
-// 核心电费计算器 (按分钟切片跨越不同电价区间，高精度计算)
 function calculateCost(startHour, durationHours, gridPowerKw, tariffs) {
     if (!tariffs || tariffs.length === 0) return 0;
     
     let totalCost = 0;
     let currentHour = startHour;
     let remainingHours = durationHours;
-    
     const step = 1 / 60; 
     
     while (remainingHours > 0.001) {
-        // 处理负数小时（比如提前到前一天开始）
         let timeOfDay = currentHour % 24;
-        if (timeOfDay < 0) timeOfDay += 24; 
+        if (timeOfDay < 0) timeOfDay += 24; // 处理负数时间（如倒退到前一天）
         
         let currentPrice = 0;
-        
         for (const t of tariffs) {
             if (t.start < t.end) {
                 if (timeOfDay >= t.start && timeOfDay < t.end) currentPrice = t.price;
             } else {
-                // 处理跨天区间
                 if (timeOfDay >= t.start || timeOfDay < t.end) currentPrice = t.price;
             }
         }
@@ -70,18 +64,38 @@ export function calculateCharge(inputs) {
     }
 
     const energy_needed = params.capacity * (params.target_percentage - params.start_percentage) / 100;
-    const start_time_hours = params.start_hour + params.start_minute / 60;
-    const end_time_hours = params.end_hour + params.end_minute / 60;
-    
-    let charging_duration = end_time_hours > start_time_hours 
-        ? end_time_hours - start_time_hours 
-        : (24 - start_time_hours) + end_time_hours;
-
-    if (charging_duration <= 0) return { error: "错误：充电时间必须大于0" };
-
     const power_effective_max_kw = model.getEffectivePowerKw(params.max_current, params);
     const grid_power_max_kw = params.max_current * params.Vs / 1000;
     const max_charging_time_hours = energy_needed / power_effective_max_kw;
+
+    const start_time_hours = params.start_hour + params.start_minute / 60;
+    const end_time_hours = params.end_hour + params.end_minute / 60;
+    const current_time_hours = params.current_hour + params.current_minute / 60;
+
+    let window_duration = end_time_hours - start_time_hours;
+    if (window_duration <= 0) window_duration += 24;
+
+    // === 核心逻辑：时空碰撞引擎 ===
+    // 判断当前时间是否在预约的时段内
+    let is_inside_window = false;
+    if (start_time_hours < end_time_hours) {
+        is_inside_window = current_time_hours >= start_time_hours && current_time_hours < end_time_hours;
+    } else {
+        is_inside_window = current_time_hours >= start_time_hours || current_time_hours < end_time_hours;
+    }
+
+    let effective_start_hours = start_time_hours;
+    let available_duration = window_duration;
+    let time_lost = false;
+
+    // 如果选了"从现在开始" 或者 迟到了(当前在时段内)
+    if (params.use_now || is_inside_window) {
+        effective_start_hours = current_time_hours;
+        let end_val = end_time_hours;
+        if (end_val < current_time_hours) end_val += 24; 
+        available_duration = end_val - current_time_hours;
+        time_lost = true; 
+    }
 
     const formatTime = (totalHours) => {
         let h = Math.floor(totalHours) % 24;
@@ -91,74 +105,43 @@ export function calculateCharge(inputs) {
         return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
 
-    // ==========================================
-    // 充不满的情况：计算保底、方案A、方案B的费用
-    // ==========================================
-    if (max_charging_time_hours > charging_duration) {
-        // === 1. 核心碰撞检测：当前时间是否错过了计划时间？ ===
-    const current_time_hours = params.current_hour + params.current_minute / 60;
-    let effective_start_hours = start_time_hours;
-    let time_lost = false;
-
-    // 计算从设定的开始时间，到“现在”过了多久
-    let start_to_now = current_time_hours - start_time_hours;
-    if (start_to_now < 0) start_to_now += 24;
-
-    if (start_to_now > 0 && start_to_now < charging_duration) {
-        // 场景：迟到了（如凌晨3点才插枪，且原计划是22点到7点）
-        effective_start_hours = current_time_hours;
-        charging_duration = charging_duration - start_to_now; // 扣减已经流失的谷电时间
-        time_lost = true;
-    }
-
-    // === 2. 重新判定充不满的情况 ===
-    if (max_charging_time_hours > charging_duration) {
-        const energy_possible = power_effective_max_kw * charging_duration;
+    // === 充不满，需要给出智能方案 ===
+    if (max_charging_time_hours > available_duration) {
+        const energy_possible = power_effective_max_kw * available_duration;
         const reachable_percentage = Math.min(100, params.start_percentage + (energy_possible / params.capacity) * 100);
-        const maxCost = calculateCost(effective_start_hours, charging_duration, grid_power_max_kw, tariffs);
         const maxLossKw = (params.R * (params.max_current ** 2)) / 1000;
-
+        const maxCost = calculateCost(effective_start_hours, available_duration, grid_power_max_kw, tariffs);
+        
         const solutions = [];
-        let now_to_end = end_time_hours - current_time_hours;
-        if (now_to_end <= 0) now_to_end += 24;
 
-        // 【方案A】物理上允许的前提下，建议提前开始 (需判定当前时间是否来得及)
-        if (now_to_end >= max_charging_time_hours) {
+        if (!time_lost) {
+            // 场景 1：还没到预约时间，来得及提前
             let early_start = end_time_hours - max_charging_time_hours;
-            if (early_start < 0) early_start += 24;
             solutions.push({
                 type: '优选', color: 'var(--primary)',
                 title: `提前至 ${formatTime(early_start)} 预约开始`,
-                desc: `到点自动断电。含提前时段的电价，总费用预估：¥${calculateCost(early_start, max_charging_time_hours, grid_power_max_kw, tariffs)}`
+                desc: `(到点自动断电。提前的时段已计入实时电价) 充满总费用：<strong style="color: #10b981;">¥${calculateCost(early_start, max_charging_time_hours, grid_power_max_kw, tariffs)}</strong>`
             });
-        }
-
-        // 【方案B】保持原设定开始（或现在迟到的时间），一直充到满
-        let late_end = effective_start_hours + max_charging_time_hours;
-        solutions.push({
-            type: '备选', color: '#6b7280',
-            title: `延后至 ${formatTime(late_end)} 结束 (取消拔枪)`,
-            desc: `保持设定的规则，充满为止，含后续电价，总费用预估：¥${calculateCost(effective_start_hours, max_charging_time_hours, grid_power_max_kw, tariffs)}`
-        });
-
-        // 【方案C】如果你想现在立刻开始，到点强制断电
-        if (!time_lost && now_to_end > charging_duration) {
-            let charge_now = power_effective_max_kw * now_to_end;
-            let percent_now = Math.min(100, params.start_percentage + (charge_now / params.capacity) * 100);
-            
+            let late_end = effective_start_hours + max_charging_time_hours;
             solutions.push({
-                type: '即刻', color: '#f59e0b',
-                title: `现在立刻执行，到 ${formatTime(end_time_hours)} 断电`,
-                desc: percent_now >= params.target_percentage 
-                    ? `可充满目标。含前半夜电价，总费用预估：¥${calculateCost(current_time_hours, max_charging_time_hours, grid_power_max_kw, tariffs)}`
-                    : `只能充至 ${percent_now.toFixed(1)}%。总费用预估：¥${calculateCost(current_time_hours, now_to_end, grid_power_max_kw, tariffs)}`
+                type: '备选', color: '#6b7280',
+                title: `延后至 ${formatTime(late_end)} 结束`,
+                desc: `(保持预约时间不变，早晨不拔枪) 充满总费用：<strong style="color: #10b981;">¥${calculateCost(effective_start_hours, max_charging_time_hours, grid_power_max_kw, tariffs)}</strong>`
+            });
+        } else {
+            // 场景 2：已经迟到 或 选了现在开始。时间不能倒流，只能往后顺延。
+            let late_end = effective_start_hours + max_charging_time_hours;
+            solutions.push({
+                type: '唯一方案', color: 'var(--primary)',
+                title: `持续满载充电至 ${formatTime(late_end)} 结束`,
+                desc: `(当前时间无法提前，已包含后续跨越时段的电价) 充满总费用：<strong style="color: #10b981;">¥${calculateCost(effective_start_hours, max_charging_time_hours, grid_power_max_kw, tariffs)}</strong>`
             });
         }
 
         return {
-            error: "无法在设定时间内达成满电目标",
+            error: "无法在设定时间内达成目标",
             reachable_percentage: Number(reachable_percentage.toFixed(1)),
-            solutions: solutions, // 将动态生成的方案数组丢给前端
+            solutions: solutions,
             fallback_stats: {
                 current: params.max_current,
                 power_kw: Number(power_effective_max_kw.toFixed(2)),
@@ -169,21 +152,18 @@ export function calculateCharge(inputs) {
         };
     }
 
-    // ==========================================
-    // 正常充得满的情况
-    // ==========================================
-    const optimal_current = model.calculateCurrent(energy_needed, charging_duration, params);
+    // === 正常充得满的情况 ===
+    const optimal_current = model.calculateCurrent(energy_needed, available_duration, params);
     if (optimal_current === null) return { error: "错误：无法计算" };
 
     const optimal_grid_power_kw = optimal_current * params.Vs / 1000;
     const current_power_effective_kw = model.getEffectivePowerKw(optimal_current, params);
     const power_loss_kw = (params.R * (optimal_current ** 2)) / 1000;
-    
-    const optimalCost = calculateCost(start_time_hours, charging_duration, optimal_grid_power_kw, tariffs);
+    const optimalCost = calculateCost(effective_start_hours, available_duration, optimal_grid_power_kw, tariffs);
 
     return {
         optimal_current: Number(optimal_current.toFixed(2)),
-        charging_duration: Number(charging_duration.toFixed(2)),
+        charging_duration: Number(available_duration.toFixed(2)),
         effective_power_kw: Number(current_power_effective_kw.toFixed(2)),
         loss_percentage: Number(((power_loss_kw / optimal_grid_power_kw) * 100).toFixed(2)),
         energy_added: Number(energy_needed.toFixed(2)),

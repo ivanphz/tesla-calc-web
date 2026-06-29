@@ -14,10 +14,13 @@
         
         <!-- 沙盒时间模拟器 -->
         <div style="background: #eef2ff; padding: 12px; border-radius: 8px; margin-bottom: 24px; font-size: 0.95rem; display: flex; align-items: center; justify-content: space-between; border: 1px dashed #a5b4fc;">
-            <label style="margin: 0; font-weight: 600; cursor: pointer; color: #4338ca;">
+            <label style="margin: 0; font-weight: 600; cursor: pointer; color: #4338ca; display: flex; align-items: center;">
                 <input type="checkbox" id="enable-mock-time" style="margin-right: 6px;"> ⏱️ 开启沙盒时间测试
             </label>
-            <input type="time" id="mock-time" value="03:00" style="padding: 4px 8px; border: 1px solid #c7d2fe; border-radius: 4px; outline: none; background: white; color: #4338ca; font-weight: bold;">
+            <div style="display: flex; gap: 8px;">
+                <input type="time" id="mock-time" style="padding: 4px 8px; border: 1px solid #c7d2fe; border-radius: 4px; outline: none; background: white; color: #4338ca; font-weight: bold;">
+                <button type="button" onclick="syncLocalTime()" style="background: white; border: 1px solid #c7d2fe; border-radius: 4px; cursor: pointer; color: #4338ca; font-size: 0.85rem; padding: 0 8px;">📍当前时间</button>
+            </div>
         </div>
 
         <div class="control-group">
@@ -55,17 +58,15 @@
         </div>
 
         <div class="control-group" style="margin-top: 32px;">
-            <label>充电时段</label>
+            <label>基准充电时段</label>
             <div class="quick-btns">
                 <button type="button" id="btn-time-night" onclick="setTimeSlot('22:00', '07:00', this)" class="active">谷电 (22:00-07:00)</button>
                 <button type="button" id="btn-time-noon" onclick="setTimeSlot('11:00', '13:00', this)">午间 (11:00-13:00)</button>
-                <button type="button" id="btn-time-now" onclick="setNowAsStart(this)">📍 从现在开始</button>
             </div>
             <div class="time-inputs">
                 <input type="time" id="start-time" value="22:00" onchange="saveSettings()">
                 <span>至</span>
                 <input type="time" id="end-time" value="07:00" onchange="saveSettings()">
-                <input type="hidden" id="use-now" value="false">
             </div>
         </div>
         
@@ -97,18 +98,18 @@
         </div>
 
         <div id="warning-result" class="warning-box">
-            <h4>⚠️ 无法在设定时间内达成目标</h4>
+            <h4>⚠️ 无法在时段内达成目标</h4>
             
             <div style="background: rgba(255,255,255,0.6); padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 0.95rem; border: 1px dashed var(--warning-border);">
-                <strong style="display: block; margin-bottom: 8px;">💡 仅在当前设定时段内 (到点断电):</strong>
+                <strong id="warn-fallback-label" style="display: block; margin-bottom: 8px;">💡 到点妥协方案:</strong>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>按 32A 满载只能充至：</span><strong id="warn-reachable" style="color: #dc2626; font-size: 1.1rem;">--%</strong></div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>该时段充入电量：</span><strong id="warn-fallback-energy">-- kWh</strong></div>
-                <div style="display: flex; justify-content: space-between;"><span>该时段预估电费：</span><strong id="warn-fallback-cost" style="color: #10b981;">¥ --</strong></div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>预估充入电量：</span><strong id="warn-fallback-energy">-- kWh</strong></div>
+                <div style="display: flex; justify-content: space-between;"><span>预估花费电费：</span><strong id="warn-fallback-cost" style="color: #10b981;">¥ --</strong></div>
             </div>
 
-            <p style="margin: 14px 0 8px 0; font-weight: 600;">✅ 为达到设定的满电目标，智能建议：</p>
+            <p style="margin: 14px 0 8px 0; font-weight: 600;">✅ 如果必须充满，系统建议：</p>
             <ul id="warn-solutions-list" style="margin: 0; padding-left: 0; list-style: none;">
-                <!-- 保持空标签即可，前端 JS 会自动往里面动态插入最优方案 -->
+                <!-- 动态注入方案 -->
             </ul>
         </div>
     </div>

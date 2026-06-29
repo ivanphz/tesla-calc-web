@@ -43,7 +43,7 @@ async function fetchRealTimeBattery() {
         syncStatus.innerText = "(无法连接云端，使用本地记录)";
         syncStatus.style.color = "#f59e0b"; // 橙色
     }
-});
+}
 
 function saveSettings() {
     const activeTimeBtn = document.querySelector('.quick-btns .active[id^="btn-time"]');

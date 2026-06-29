@@ -34,7 +34,10 @@ function calculateCost(startHour, durationHours, gridPowerKw, tariffs) {
     const step = 1 / 60; 
     
     while (remainingHours > 0.001) {
-        const timeOfDay = currentHour % 24;
+        // 处理负数小时（比如提前到前一天开始）
+        let timeOfDay = currentHour % 24;
+        if (timeOfDay < 0) timeOfDay += 24; 
+        
         let currentPrice = 0;
         
         for (const t of tariffs) {
@@ -88,19 +91,32 @@ export function calculateCharge(inputs) {
         return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
 
+    // ==========================================
+    // 充不满的情况：计算保底、方案A、方案B的费用
+    // ==========================================
     if (max_charging_time_hours > charging_duration) {
         const energy_possible = power_effective_max_kw * charging_duration;
         const reachable_percentage = Math.min(100, params.start_percentage + (energy_possible / params.capacity) * 100);
         const extra_time_needed = max_charging_time_hours - charging_duration;
 
+        // 保底方案执行情况
         const maxCost = calculateCost(start_time_hours, charging_duration, grid_power_max_kw, tariffs);
         const maxLossKw = (params.R * (params.max_current ** 2)) / 1000;
 
+        // 计算方案A (提前开始) 和方案B (延后结束) 的跨时段总电费
+        const early_start_hours = start_time_hours - extra_time_needed;
+        const late_end_hours = end_time_hours + extra_time_needed;
+        
+        const cost_early_start = calculateCost(early_start_hours, max_charging_time_hours, grid_power_max_kw, tariffs);
+        const cost_late_end = calculateCost(start_time_hours, max_charging_time_hours, grid_power_max_kw, tariffs);
+
         return {
-            error: "无法在设定时间内达成目标",
+            error: "无法在设定时间内达成满电目标",
             reachable_percentage: Number(reachable_percentage.toFixed(1)),
-            early_start_time: formatTime(start_time_hours - extra_time_needed),
-            late_end_time: formatTime(end_time_hours + extra_time_needed),
+            early_start_time: formatTime(early_start_hours),
+            late_end_time: formatTime(late_end_hours),
+            cost_early_start: cost_early_start,  // 方案A的总电费
+            cost_late_end: cost_late_end,        // 方案B的总电费
             fallback_stats: {
                 current: params.max_current,
                 power_kw: Number(power_effective_max_kw.toFixed(2)),
@@ -111,6 +127,9 @@ export function calculateCharge(inputs) {
         };
     }
 
+    // ==========================================
+    // 正常充得满的情况
+    // ==========================================
     const optimal_current = model.calculateCurrent(energy_needed, charging_duration, params);
     if (optimal_current === null) return { error: "错误：无法计算" };
 

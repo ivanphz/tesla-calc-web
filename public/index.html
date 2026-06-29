@@ -17,9 +17,11 @@
             <label style="margin: 0; font-weight: 600; cursor: pointer; color: #4338ca; display: flex; align-items: center;">
                 <input type="checkbox" id="enable-mock-time" style="margin-right: 6px;"> ⏱️ 开启沙盒时间测试
             </label>
-            <div style="display: flex; gap: 8px;">
-                <input type="time" id="mock-time" step="300" style="padding: 4px 8px; border: 1px solid #c7d2fe; border-radius: 4px; outline: none; background: white; color: #4338ca; font-weight: bold;">
-                <button type="button" onclick="syncLocalTime()" style="background: white; border: 1px solid #c7d2fe; border-radius: 4px; cursor: pointer; color: #4338ca; font-size: 0.85rem; padding: 0 8px;">📍当前时间</button>
+            <div style="display: flex; gap: 4px; align-items: center;">
+                <button type="button" onclick="adjustTime('mock-time', -5)" style="width: 28px; height: 28px; border: 1px solid #c7d2fe; background: white; border-radius: 4px; cursor: pointer; color: #4338ca; font-weight: bold;">-</button>
+                <input type="time" id="mock-time" style="padding: 2px 4px; border: 1px solid #c7d2fe; border-radius: 4px; outline: none; background: white; color: #4338ca; font-weight: bold;">
+                <button type="button" onclick="adjustTime('mock-time', 5)" style="width: 28px; height: 28px; border: 1px solid #c7d2fe; background: white; border-radius: 4px; cursor: pointer; color: #4338ca; font-weight: bold;">+</button>
+                <button type="button" onclick="syncLocalTime()" style="height: 28px; background: white; border: 1px solid #c7d2fe; border-radius: 4px; cursor: pointer; color: #4338ca; font-size: 0.85rem; padding: 0 8px; margin-left: 4px;">📍当前</button>
             </div>
         </div>
 
@@ -63,10 +65,18 @@
                 <button type="button" id="btn-time-night" onclick="setTimeSlot('22:00', '07:00', this)" class="active">谷电 (22:00-07:00)</button>
                 <button type="button" id="btn-time-noon" onclick="setTimeSlot('11:00', '13:00', this)">午间 (11:00-13:00)</button>
             </div>
-            <div class="time-inputs">
-                <input type="time" id="start-time" value="22:00" step="300" onchange="saveSettings()">
+            <div class="time-inputs" style="display: flex; align-items: center; gap: 8px; margin-top: 12px;">
+                <div style="display: flex; gap: 4px; align-items: center;">
+                    <button type="button" onclick="adjustTime('start-time', -5)" style="width: 28px; height: 28px; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">-</button>
+                    <input type="time" id="start-time" value="22:00" onchange="saveSettings()" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px;">
+                    <button type="button" onclick="adjustTime('start-time', 5)" style="width: 28px; height: 28px; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">+</button>
+                </div>
                 <span>至</span>
-                <input type="time" id="end-time" value="07:00" step="300" onchange="saveSettings()">
+                <div style="display: flex; gap: 4px; align-items: center;">
+                    <button type="button" onclick="adjustTime('end-time', -5)" style="width: 28px; height: 28px; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">-</button>
+                    <input type="time" id="end-time" value="07:00" onchange="saveSettings()" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px;">
+                    <button type="button" onclick="adjustTime('end-time', 5)" style="width: 28px; height: 28px; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">+</button>
+                </div>
             </div>
         </div>
         

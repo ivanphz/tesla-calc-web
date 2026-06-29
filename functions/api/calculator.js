@@ -1,6 +1,6 @@
 import { DEFAULTS, CHARGING_MODELS } from './config.js';
 
-// 解析时段电价字符串 (格式: "00:00-07:00=0.3783,07:00-11:00=0.5783")
+// 解析时段电价字符串 (支持 22:00-08:00 这种跨天格式)
 function parseTariffs(tariffStr) {
     if (!tariffStr) return [];
     const tariffs = [];
@@ -16,7 +16,7 @@ function parseTariffs(tariffStr) {
         
         const startHour = parseInt(startStr.split(':')[0]) + parseInt(startStr.split(':')[1]||0)/60;
         let endHour = parseInt(endStr.split(':')[0]) + parseInt(endStr.split(':')[1]||0)/60;
-        if (endHour === 0 && startHour > 0) endHour = 24; // 处理 22:00-00:00 的跨夜逻辑
+        if (endHour === 0 && startHour > 0) endHour = 24; 
         
         tariffs.push({ start: startHour, end: endHour, price: price });
     }
@@ -31,19 +31,17 @@ function calculateCost(startHour, durationHours, gridPowerKw, tariffs) {
     let currentHour = startHour;
     let remainingHours = durationHours;
     
-    // 按每分钟步进计算，完美兼容所有奇葩时段边界
     const step = 1 / 60; 
     
     while (remainingHours > 0.001) {
         const timeOfDay = currentHour % 24;
         let currentPrice = 0;
         
-        // 匹配当前时间落入哪个电价区间
         for (const t of tariffs) {
             if (t.start < t.end) {
                 if (timeOfDay >= t.start && timeOfDay < t.end) currentPrice = t.price;
             } else {
-                // 处理 22:00-06:00 这种跨天区间
+                // 处理跨天区间
                 if (timeOfDay >= t.start || timeOfDay < t.end) currentPrice = t.price;
             }
         }
@@ -79,7 +77,6 @@ export function calculateCharge(inputs) {
     if (charging_duration <= 0) return { error: "错误：充电时间必须大于0" };
 
     const power_effective_max_kw = model.getEffectivePowerKw(params.max_current, params);
-    // 从电网抽取的总功率 = 有效功率 + 线损功率
     const grid_power_max_kw = params.max_current * params.Vs / 1000;
     const max_charging_time_hours = energy_needed / power_effective_max_kw;
 
@@ -91,7 +88,6 @@ export function calculateCharge(inputs) {
         return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
 
-    // === 充不满的情况（返回保底 32A 的执行数据 + 预估费用） ===
     if (max_charging_time_hours > charging_duration) {
         const energy_possible = power_effective_max_kw * charging_duration;
         const reachable_percentage = Math.min(100, params.start_percentage + (energy_possible / params.capacity) * 100);
@@ -105,7 +101,6 @@ export function calculateCharge(inputs) {
             reachable_percentage: Number(reachable_percentage.toFixed(1)),
             early_start_time: formatTime(start_time_hours - extra_time_needed),
             late_end_time: formatTime(end_time_hours + extra_time_needed),
-            // 补充注入的“保底方案”数据
             fallback_stats: {
                 current: params.max_current,
                 power_kw: Number(power_effective_max_kw.toFixed(2)),
@@ -116,7 +111,6 @@ export function calculateCharge(inputs) {
         };
     }
 
-    // === 正常充得满的情况 ===
     const optimal_current = model.calculateCurrent(energy_needed, charging_duration, params);
     if (optimal_current === null) return { error: "错误：无法计算" };
 
@@ -124,7 +118,6 @@ export function calculateCharge(inputs) {
     const current_power_effective_kw = model.getEffectivePowerKw(optimal_current, params);
     const power_loss_kw = (params.R * (optimal_current ** 2)) / 1000;
     
-    // 计算正常情况电费
     const optimalCost = calculateCost(start_time_hours, charging_duration, optimal_grid_power_kw, tariffs);
 
     return {

@@ -12,7 +12,13 @@
     <!-- 左侧：参数控制 -->
     <div class="panel">
         <h2>⚡ 充电参数设置</h2>
-        
+        <!-- 新增：沙盒时间模拟器，用于测试特定时间点的碰撞 -->
+        <div style="background: #eef2ff; padding: 12px; border-radius: 8px; margin-bottom: 24px; font-size: 0.95rem; display: flex; align-items: center; justify-content: space-between; border: 1px dashed #a5b4fc;">
+            <label style="margin: 0; font-weight: 600; cursor: pointer; color: #4338ca;">
+                <input type="checkbox" id="enable-mock-time" style="margin-right: 6px;"> ⏱️ 开启沙盒时间 (用于测试)
+            </label>
+            <input type="time" id="mock-time" value="20:30" style="padding: 4px 8px; border: 1px solid #c7d2fe; border-radius: 4px; outline: none; background: white; color: #4338ca; font-weight: bold;">
+        </div>
         <div class="control-group">
             <label style="display: flex; align-items: center;">
                 当前电量 (%) 

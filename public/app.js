@@ -13,8 +13,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (prefs.start) syncStart(prefs.start, false); 
     }
     
-    // 初始化沙盒时间为真实时间
-    syncLocalTime();
+    function syncLocalTime() {
+    const now = new Date();
+    
+    // 引入真实场景的“操作时间”：当前时间直接往后加 3 分钟
+    now.setMinutes(now.getMinutes() + 3);
+    
+    let h = now.getHours();
+    let m = now.getMinutes();
+    
+    // 强制向上进位 (Math.ceil) 到最近的 5 分钟档位
+    // 例如：原时间 15:51 -> 缓冲后 15:54 -> 进位后 15:55
+    // 例如：原时间 15:53 -> 缓冲后 15:56 -> 进位后 16:00
+    m = Math.ceil(m / 5) * 5;
+    
+    if (m === 60) {
+        m = 0;
+        h = (h + 1) % 24;
+    }
+    
+    document.getElementById('mock-time').value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
     
     await fetchRealTimeBattery();
 });

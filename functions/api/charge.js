@@ -30,8 +30,6 @@ export async function onRequest(context) {
         start_minute: start_minute,
         end_hour: searchParams.has("end_hour") ? parseInt(searchParams.get("end_hour"), 10) : DEFAULTS.end_hour,
         end_minute: searchParams.has("end_minute") ? parseInt(searchParams.get("end_minute"), 10) : DEFAULTS.end_minute,
-        
-        // --- 新增下面这行：接收前端传来的电价配置 ---
         tariff_config: searchParams.get("tariff") || ""
     };
 

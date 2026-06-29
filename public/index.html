@@ -62,7 +62,6 @@
             </div>
         </div>
         
-        <!-- 新增：分时电价配置 -->
         <div class="control-group" style="margin-top: 32px;">
             <label style="display: flex; justify-content: space-between; cursor: pointer;" onclick="toggleTariffSettings()">
                 💰 分时电价配置 <span style="font-size: 0.85rem; color: #6b7280;">(点击展开/收起)</span>
@@ -93,20 +92,17 @@
 
         <div id="warning-result" class="warning-box">
             <h4>⚠️ 无法在设定时间内达成目标</h4>
-            <p style="margin-bottom: 5px;">按 32A 最大电流充电，当前时段内只能充至 <strong id="warn-reachable" style="font-size: 1.2rem; color: #dc2626;">--%</strong>。</p>
             
-            <!-- 保底方案数据展示 -->
-            <div style="background: rgba(255,255,255,0.6); padding: 10px; border-radius: 6px; margin: 10px 0; font-size: 0.95rem; border: 1px dashed var(--warning-border);">
-                <strong style="display: block; margin-bottom: 6px;">💡 当前可用时段保底执行情况：</strong>
-                <div style="display: flex; justify-content: space-between;"><span>执行电流：</span><strong id="warn-fallback-current">-- A</strong></div>
-                <div style="display: flex; justify-content: space-between;"><span>预估费用：</span><strong id="warn-fallback-cost" style="color: #10b981;">¥ --</strong></div>
-                <div style="display: flex; justify-content: space-between;"><span>充入电量：</span><strong id="warn-fallback-energy">-- kWh</strong></div>
+            <div style="background: rgba(255,255,255,0.6); padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 0.95rem; border: 1px dashed var(--warning-border);">
+                <strong style="display: block; margin-bottom: 8px;">💡 仅在当前时段内充电 (到点断电):</strong>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>按 32A 满载只能充至：</span><strong id="warn-reachable" style="color: #dc2626; font-size: 1.1rem;">--%</strong></div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>该时段充入电量：</span><strong id="warn-fallback-energy">-- kWh</strong></div>
+                <div style="display: flex; justify-content: space-between;"><span>该时段预估电费：</span><strong id="warn-fallback-cost" style="color: #10b981;">¥ --</strong></div>
             </div>
 
-            <p style="margin: 10px 0 5px 0;">如果您必须达到满电目标，需要调整时段：</p>
-            <ul>
-                <li>提前至 <strong id="warn-early">--:--</strong> 开始（保持结束时间不变）</li>
-                <li>延后至 <strong id="warn-late">--:--</strong> 结束（保持开始时间不变）</li>
+            <p style="margin: 14px 0 8px 0; font-weight: 600;">✅ 为达到设定的满电目标，建议：</p>
+            <ul id="warn-solutions-list" style="margin: 0; padding-left: 0; list-style: none;">
+                <!-- JS 会根据“即插即用”还是“预约充电”在这里动态注入方案 -->
             </ul>
         </div>
     </div>

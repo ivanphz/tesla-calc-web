@@ -30,9 +30,10 @@ export const CHARGING_MODELS = {
             return optimal > params.max_current ? params.max_current : optimal;
         },
         getEffectivePowerKw(current, params) {
-            const powerMax = params.Vs * current - params.R * (current ** 2);
+            // 【彻底修复】：电网总功率减去一次发热线损即可，不要减两次
+            const gridPower = params.Vs * current;
             const powerLoss = params.R * (current ** 2);
-            return (powerMax - powerLoss) / 1000;
+            return (gridPower - powerLoss) / 1000;
         }
     }
 };

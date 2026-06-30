@@ -155,17 +155,23 @@ export function calculateCharge(inputs) {
     }
 
     // === 正常充得满的情况 ===
-    const optimal_current = model.calculateCurrent(energy_needed, standard_window, params);
+    const optimal_current = model.calculateCurrent(energy_needed, available_duration, params);
     if (optimal_current === null) return { error: "错误：无法计算" };
 
     const optimal_grid_power_kw = optimal_current * params.Vs / 1000;
     const current_power_effective_kw = model.getEffectivePowerKw(optimal_current, params);
+    
+    // 【修正核心点】根据降流后的真实有效功率，重新计算实际所需的充电时长
+    const actual_charging_duration = energy_needed / current_power_effective_kw;
+    
     const power_loss_kw = (params.R * (optimal_current ** 2)) / 1000;
-    const optimalCost = calculateCost(start_time_hours, max_charging_time_hours, optimal_grid_power_kw, tariffs);
+    
+    // 用真实的充电时长，计算真实的电费
+    const optimalCost = calculateCost(effective_start_hours, actual_charging_duration, optimal_grid_power_kw, tariffs);
 
     return {
         optimal_current: Number(optimal_current.toFixed(2)),
-        charging_duration: Number(max_charging_time_hours.toFixed(2)),
+        charging_duration: Number(actual_charging_duration.toFixed(2)), // 更新为被拉长的真实时长
         effective_power_kw: Number(current_power_effective_kw.toFixed(2)),
         loss_percentage: Number(((power_loss_kw / optimal_grid_power_kw) * 100).toFixed(2)),
         energy_added: Number(energy_needed.toFixed(2)),

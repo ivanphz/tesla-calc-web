@@ -15,9 +15,14 @@ function parseTariffs(tariffStr) {
         
         const startHour = parseInt(startStr.split(':')[0]) + parseInt(startStr.split(':')[1]||0)/60;
         let endHour = parseInt(endStr.split(':')[0]) + parseInt(endStr.split(':')[1]||0)/60;
-        if (endHour === 0 && startHour > 0) endHour = 24; 
         
-        tariffs.push({ start: startHour, end: endHour, price: price });
+        // 核心修改：将跨天的时段物理拆分为当天的两个独立区间，抹平跨天计算的心智负担
+        if (endHour <= startHour) {
+            tariffs.push({ start: startHour, end: 24, price: price });
+            tariffs.push({ start: 0, end: endHour, price: price });
+        } else {
+            tariffs.push({ start: startHour, end: endHour, price: price });
+        }
     }
     return tariffs;
 }
@@ -26,39 +31,41 @@ function calculateCost(startHour, durationHours, gridPowerKw, tariffs) {
     if (!tariffs || tariffs.length === 0) return 0;
     
     let totalCost = 0;
-    let currentHour = startHour;
-    let remainingHours = durationHours;
-    const step = 1 / 60; 
+    let remainingDuration = durationHours;
+    let currentStart = startHour % 24; 
     
-    while (remainingHours > 0.001) {
-        let timeOfDay = currentHour % 24;
-        if (timeOfDay < 0) timeOfDay += 24; 
+    // 处理单次充电时间极长，可能跨越多个 24 小时周期的情况
+    while (remainingDuration > 0.0001) { 
+        // 划定当前这“一天”内的计算窗口，最长算到 24:00
+        const currentEnd = Math.min(currentStart + remainingDuration, 24);
+        const stepDuration = currentEnd - currentStart;
         
-        let currentPrice = 0;
+        // 遍历所有当天电价区间，求线段交集
         for (const t of tariffs) {
-            if (t.start < t.end) {
-                if (timeOfDay >= t.start && timeOfDay < t.end) currentPrice = t.price;
-            } else {
-                if (timeOfDay >= t.start || timeOfDay < t.end) currentPrice = t.price;
+            const intersectStart = Math.max(currentStart, t.start);
+            const intersectEnd = Math.min(currentEnd, t.end);
+            
+            if (intersectStart < intersectEnd) {
+                const overlapHours = intersectEnd - intersectStart;
+                totalCost += overlapHours * gridPowerKw * t.price;
             }
         }
         
-        const calcStep = Math.min(step, remainingHours);
-        const energyInStep = gridPowerKw * calcStep;
-        totalCost += energyInStep * currentPrice;
-        
-        currentHour += calcStep;
-        remainingHours -= calcStep;
+        remainingDuration -= stepDuration;
+        currentStart = 0; // 如果还有剩余时长，说明跨入了第二天，第二天从 00:00 开始算
     }
     
     return Number(totalCost.toFixed(2));
 }
 
 const formatTime = (totalHours) => {
-    let h = Math.floor(totalHours) % 24;
-    if (h < 0) h += 24;
-    let m = Math.round((totalHours - Math.floor(totalHours)) * 60);
-    if (m === 60) { h = (h + 1) % 24; m = 0; }
+    // 转换为纯整数分钟进行运算，规避所有浮点数残留和进位缺失
+    let totalMinutes = Math.round(totalHours * 60);
+    // 抹平负数跨天和超长跨天的模运算
+    totalMinutes = ((totalMinutes % 1440) + 1440) % 1440;
+    
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 };
 
@@ -126,16 +133,11 @@ export function calculateCharge(inputs) {
             const total_cost = calculateCost(current_time_hours, max_charging_time_hours, grid_power_max_kw, tariffs);
             const late_end = current_time_hours + max_charging_time_hours;
             
+            // 修复的时空碰撞进位 Bug
             let extra_hours = max_charging_time_hours - now_to_end;
-            let extra_h = Math.floor(extra_hours);
-            let extra_m = Math.round((extra_hours - extra_h) * 60);
-            
-            // 【隐藏 Bug 修复】：满 60 分钟自动进位 1 小时
-            if (extra_m === 60) {
-                extra_h += 1;
-                extra_m = 0;
-            }
-            
+            let extra_total_minutes = Math.round(extra_hours * 60);
+            let extra_h = Math.floor(extra_total_minutes / 60);
+            let extra_m = extra_total_minutes % 60;
             let extra_str = extra_h > 0 ? `${extra_h}小时${extra_m}分` : `${extra_m}分`;
 
             fallback_stats = {
@@ -175,7 +177,6 @@ export function calculateCharge(inputs) {
         available_duration = now_to_end; 
     }
 
-    // 【彻底清理】：直接信任底层的公式输出，不需要任何补丁
     const optimal_current = model.calculateCurrent(energy_needed, available_duration, params);
     if (optimal_current === null) return { error: "错误：无法计算" };
 

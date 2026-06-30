@@ -92,7 +92,6 @@ export function calculateCharge(inputs) {
         let fallback_stats = null;
 
         if (now_to_end >= max_charging_time_hours) {
-            // 场景 1：时间充裕，还没到倒推的最佳启动时间
             let early_start = end_time_hours - max_charging_time_hours;
             if (early_start < 0) early_start += 24;
             
@@ -120,7 +119,6 @@ export function calculateCharge(inputs) {
                 cost: calculateCost(start_time_hours, standard_window, grid_power_max_kw, tariffs)
             };
         } else {
-            // 场景 2：已经迟到（或者时间根本不够用）
             const energy_now_to_end = power_effective_max_kw * now_to_end;
             const percent_at_end = Math.min(100, params.start_percentage + (energy_now_to_end / params.capacity) * 100);
             const cost_to_end = calculateCost(current_time_hours, now_to_end, grid_power_max_kw, tariffs);
@@ -131,6 +129,13 @@ export function calculateCharge(inputs) {
             let extra_hours = max_charging_time_hours - now_to_end;
             let extra_h = Math.floor(extra_hours);
             let extra_m = Math.round((extra_hours - extra_h) * 60);
+            
+            // 【隐藏 Bug 修复】：满 60 分钟自动进位 1 小时
+            if (extra_m === 60) {
+                extra_h += 1;
+                extra_m = 0;
+            }
+            
             let extra_str = extra_h > 0 ? `${extra_h}小时${extra_m}分` : `${extra_m}分`;
 
             fallback_stats = {
@@ -155,8 +160,6 @@ export function calculateCharge(inputs) {
     }
 
     // === 正常充得满的情况 ===
-    
-    // 1. 先动态判定真实的“起充时间”和“可用时段”
     let is_inside_window = false;
     if (start_time_hours < end_time_hours) {
         is_inside_window = (current_time_hours >= start_time_hours && current_time_hours < end_time_hours);
@@ -165,27 +168,26 @@ export function calculateCharge(inputs) {
     }
 
     let effective_start_hours = start_time_hours;
-    let available_duration = standard_window; // 强制锁死在窗口时间内（如 9 小时）
+    let available_duration = standard_window; 
 
     if (is_inside_window) {
         effective_start_hours = current_time_hours;
-        available_duration = now_to_end; // 迟到情况，严格锁死剩余时间
+        available_duration = now_to_end; 
     }
 
-    // 2. 核心：根据死锁的可用时长，逆推最佳电流（不加任何冗余，原汁原味）
+    // 【彻底清理】：直接信任底层的公式输出，不需要任何补丁
     const optimal_current = model.calculateCurrent(energy_needed, available_duration, params);
     if (optimal_current === null) return { error: "错误：无法计算" };
 
-    const optimal_grid_power_kw = optimal_current * params.Vs / 1000;
     const current_power_effective_kw = model.getEffectivePowerKw(optimal_current, params);
+    const optimal_grid_power_kw = optimal_current * params.Vs / 1000;
     const power_loss_kw = (params.R * (optimal_current ** 2)) / 1000;
     
-    // 3. 直接使用被锁死的 available_duration (9小时) 算钱，绝不溢出时间！
     const optimalCost = calculateCost(effective_start_hours, available_duration, optimal_grid_power_kw, tariffs);
 
     return {
         optimal_current: Number(optimal_current.toFixed(2)),
-        charging_duration: Number(available_duration.toFixed(2)), // 完美还原：严格控制在你规定的总时间内
+        charging_duration: Number(available_duration.toFixed(2)),
         effective_power_kw: Number(current_power_effective_kw.toFixed(2)),
         loss_percentage: Number(((power_loss_kw / optimal_grid_power_kw) * 100).toFixed(2)),
         energy_added: Number(energy_needed.toFixed(2)),

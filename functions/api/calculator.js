@@ -155,23 +155,42 @@ export function calculateCharge(inputs) {
     }
 
     // === 正常充得满的情况 ===
+    
+    // 1. 先动态判定真实的“起充时间”和“可用时段”
+    let is_inside_window = false;
+    if (start_time_hours < end_time_hours) {
+        is_inside_window = (current_time_hours >= start_time_hours && current_time_hours < end_time_hours);
+    } else {
+        is_inside_window = (current_time_hours >= start_time_hours || current_time_hours < end_time_hours);
+    }
+
+    let effective_start_hours = start_time_hours;
+    let available_duration = standard_window;
+
+    if (is_inside_window) {
+        // 如果当前时间已经身处计划时段内（比如半夜插枪），真实起充时间就是现在
+        effective_start_hours = current_time_hours;
+        available_duration = now_to_end;
+    }
+
+    // 2. 根据可用时长，计算最佳降流电流
     const optimal_current = model.calculateCurrent(energy_needed, available_duration, params);
     if (optimal_current === null) return { error: "错误：无法计算" };
 
     const optimal_grid_power_kw = optimal_current * params.Vs / 1000;
     const current_power_effective_kw = model.getEffectivePowerKw(optimal_current, params);
     
-    // 【修正核心点】根据降流后的真实有效功率，重新计算实际所需的充电时长
+    // 【核心修复】根据降流后的真实有效功率，重新计算实际需要充多久
     const actual_charging_duration = energy_needed / current_power_effective_kw;
     
     const power_loss_kw = (params.R * (optimal_current ** 2)) / 1000;
     
-    // 用真实的充电时长，计算真实的电费
+    // 【核心修复】用真实的起充时间 + 降流拉长后的真实充电时长，计算真实电费
     const optimalCost = calculateCost(effective_start_hours, actual_charging_duration, optimal_grid_power_kw, tariffs);
 
     return {
         optimal_current: Number(optimal_current.toFixed(2)),
-        charging_duration: Number(actual_charging_duration.toFixed(2)), // 更新为被拉长的真实时长
+        charging_duration: Number(actual_charging_duration.toFixed(2)), // 更新为被拉长后的真实时长
         effective_power_kw: Number(current_power_effective_kw.toFixed(2)),
         loss_percentage: Number(((power_loss_kw / optimal_grid_power_kw) * 100).toFixed(2)),
         energy_added: Number(energy_needed.toFixed(2)),

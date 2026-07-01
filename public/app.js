@@ -7,25 +7,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const saved = localStorage.getItem('tesla_calc_prefs');
     if (saved) {
         const prefs = JSON.parse(saved);
-        if (prefs.target) syncTarget(prefs.target);
+        if (prefs.target) syncTarget(prefs.target, false);
         if (prefs.startTime) document.getElementById('start-time').value = prefs.startTime;
         if (prefs.endTime) document.getElementById('end-time').value = prefs.endTime;
         if (prefs.tariff) document.getElementById('tariff-config').value = prefs.tariff;
-        if (prefs.activeTimeBtnId) {
-            const btn = document.getElementById(prefs.activeTimeBtnId);
-            if (btn) updateTimeBtnUI(btn);
-        }
         if (prefs.start) syncStart(prefs.start, false);
-        if (prefs.syncTargetWithCar) document.getElementById('sync-target-with-car').checked = true;
     }
-    
+    // "谷电/午间"高亮不再单独存一份状态，而是每次都直接从当前的开始/结束时间反推——
+    // 这样它就不可能和实际时间"看起来同步了、其实没同步"，因为它本来就是算出来的，不是记出来的。
+    syncBaseWindowButtonState();
+
     // C. 拉取云端车机电量
     await fetchRealTimeBattery();
 
-    // D. 如果开着"跟随车机目标电量"，顺带拉一次目标电量
-    if (document.getElementById('sync-target-with-car').checked) {
-        await fetchRealTimeChargeLimit();
-    }
+    // D. 拉取云端车机目标电量：有数据就用，没有就保留当前值，不需要开关
+    await fetchRealTimeChargeLimit();
 });
 
 // === 核心：获取真实当前时间 + 3分钟操作缓冲 ===
@@ -86,27 +82,16 @@ async function fetchRealTimeChargeLimit() {
         const response = await fetch(`/api/battery?t=${new Date().getTime()}`);
         const data = await response.json();
         if (data && typeof data.charge_limit === 'number') {
-            syncTarget(data.charge_limit);
+            syncTarget(data.charge_limit, false);
             targetSyncStatus.innerText = "(✓ 已同步车机)";
             targetSyncStatus.style.color = "#10b981";
         } else {
-            targetSyncStatus.innerText = "(车机暂无数据，沿用当前值)";
+            targetSyncStatus.innerText = "(车机暂无数据，可手动设置)";
             targetSyncStatus.style.color = "#f59e0b";
         }
     } catch (error) {
-        targetSyncStatus.innerText = "(连接失败，沿用当前值)";
+        targetSyncStatus.innerText = "(连接失败，可手动设置)";
         targetSyncStatus.style.color = "#f59e0b";
-    }
-}
-
-// 开关切换：打开就立刻拉一次；关掉则清空状态提示，改回纯手动
-function onSyncTargetToggle(checked) {
-    saveSettings();
-    const targetSyncStatus = document.getElementById('target-sync-status');
-    if (checked) {
-        fetchRealTimeChargeLimit();
-    } else {
-        targetSyncStatus.innerText = "";
     }
 }
 
@@ -116,15 +101,12 @@ function toggleTariffSettings() {
 }
 
 function saveSettings() {
-    const activeTimeBtn = document.querySelector('.quick-btns .active[id^="btn-time"]');
     const prefs = {
         start: document.getElementById('start-battery').value,
         target: document.getElementById('target-battery').value,
         startTime: document.getElementById('start-time').value,
         endTime: document.getElementById('end-time').value,
-        activeTimeBtnId: activeTimeBtn ? activeTimeBtn.id : 'btn-time-night',
-        tariff: document.getElementById('tariff-config').value,
-        syncTargetWithCar: document.getElementById('sync-target-with-car').checked
+        tariff: document.getElementById('tariff-config').value
     };
     localStorage.setItem('tesla_calc_prefs', JSON.stringify(prefs));
 }
@@ -148,7 +130,7 @@ function adjustStart(delta) {
     syncStart(current + delta, true);
 }
 
-function syncTarget(val) {
+function syncTarget(val, manual = true) {
     let v = parseInt(val);
     if (isNaN(v)) v = 80;
     if (v < 50) v = 50;
@@ -160,6 +142,11 @@ function syncTarget(val) {
         btn.classList.toggle('active', parseInt(btn.innerText) === v);
     });
     saveSettings();
+    if (manual) {
+        const status = document.getElementById('target-sync-status');
+        status.innerText = "(已手动修改)";
+        status.style.color = "#6b7280";
+    }
 }
 
 function adjustTarget(delta) {
@@ -179,11 +166,24 @@ function updateTimeBtnUI(activeBtn) {
     if (activeBtn) activeBtn.classList.add('active');
 }
 
+// "谷电/午间"这两个按钮的高亮状态，不额外存一份，而是每次都从当前的开始/结束时间直接反推：
+// 值匹配上了就点亮对应按钮，match 不上就都不亮——不会出现"改回了同样的时间，按钮却没亮"的不同步。
+const BASE_WINDOW_PRESETS = [
+    { id: 'btn-time-night', start: '22:00', end: '07:00' },
+    { id: 'btn-time-noon', start: '11:00', end: '13:00' }
+];
+
+function syncBaseWindowButtonState() {
+    const start = document.getElementById('start-time').value;
+    const end = document.getElementById('end-time').value;
+    const matched = BASE_WINDOW_PRESETS.find(p => p.start === start && p.end === end);
+    updateTimeBtnUI(matched ? document.getElementById(matched.id) : null);
+}
+
 // === 开始时间 / 结束时间各自独立的快捷预设 ===
-// 单独改动其中一个，"谷电/午间"这两个组合预设就不一定还准了，所以顺手清掉它们的高亮(不清active本身没有功能影响，只是视觉上会显示误导)
 function setStartTime(timeStr) {
     document.getElementById('start-time').value = timeStr;
-    updateTimeBtnUI();
+    syncBaseWindowButtonState();
     saveSettings();
 }
 
@@ -194,7 +194,7 @@ function setStartTimeNow() {
 
 function setEndTime(timeStr) {
     document.getElementById('end-time').value = timeStr;
-    updateTimeBtnUI();
+    syncBaseWindowButtonState();
     saveSettings();
 }
 
@@ -301,6 +301,6 @@ function adjustTime(inputId, deltaMinutes) {
     if (h < 0) h += 24;
     
     input.value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    if (inputId === 'start-time' || inputId === 'end-time') updateTimeBtnUI();
+    if (inputId === 'start-time' || inputId === 'end-time') syncBaseWindowButtonState();
     saveSettings();
 }

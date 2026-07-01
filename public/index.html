@@ -48,9 +48,6 @@
                 <span id="target-sync-status" style="font-size: 0.85rem; font-weight: normal; white-space: nowrap;"></span>
                 <a href="javascript:void(0)" onclick="fetchRealTimeChargeLimit()" style="font-size: 0.85rem; margin-left: auto; color: var(--primary); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; background: white; white-space: nowrap; flex-shrink: 0;">↻ 还原车机目标</a>
             </label>
-            <label style="display: flex; align-items: center; gap: 6px; font-weight: normal; font-size: 0.85rem; color: #6b7280; margin: 2px 0 12px; cursor: pointer;">
-                <input type="checkbox" id="sync-target-with-car" onchange="onSyncTargetToggle(this.checked)"> 打开页面时自动跟随车机设置的目标电量（关闭则使用下方手动设置）
-            </label>
             <div class="stepper" style="margin-bottom: 12px;">
                 <button type="button" onclick="adjustTarget(-1)">-</button>
                 <input type="number" id="target-battery" value="90" min="50" max="100" onchange="syncTarget(this.value)">
@@ -76,7 +73,7 @@
                 <div>
                     <div style="display: flex; gap: 4px; align-items: center;">
                         <button type="button" onclick="adjustTime('start-time', -5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">-</button>
-                        <input type="time" id="start-time" value="22:00" onchange="updateTimeBtnUI(); saveSettings()" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; flex-shrink: 0;">
+                        <input type="time" id="start-time" value="22:00" onchange="syncBaseWindowButtonState(); saveSettings()" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; flex-shrink: 0;">
                         <button type="button" onclick="adjustTime('start-time', 5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">+</button>
                     </div>
                     <div class="quick-btns" style="margin-top: 6px; gap: 4px;">
@@ -89,7 +86,7 @@
                 <div>
                     <div style="display: flex; gap: 4px; align-items: center;">
                         <button type="button" onclick="adjustTime('end-time', -5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">-</button>
-                        <input type="time" id="end-time" value="07:00" onchange="updateTimeBtnUI(); saveSettings()" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; flex-shrink: 0;">
+                        <input type="time" id="end-time" value="07:00" onchange="syncBaseWindowButtonState(); saveSettings()" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; flex-shrink: 0;">
                         <button type="button" onclick="adjustTime('end-time', 5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">+</button>
                     </div>
                     <div class="quick-btns" style="margin-top: 6px; gap: 4px;">

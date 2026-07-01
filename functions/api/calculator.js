@@ -16,8 +16,11 @@ function parseTariffs(tariffStr) {
         const startHour = parseInt(startStr.split(':')[0]) + parseInt(startStr.split(':')[1]||0)/60;
         let endHour = parseInt(endStr.split(':')[0]) + parseInt(endStr.split(':')[1]||0)/60;
         
+        // 【修复】start===end 是无效时段（不是"整整24小时"），直接跳过，避免误算成全天覆盖
+        if (endHour === startHour) continue;
+        
         // 核心修改：将跨天的时段物理拆分为当天的两个独立区间，抹平跨天计算的心智负担
-        if (endHour <= startHour) {
+        if (endHour < startHour) {
             tariffs.push({ start: startHour, end: 24, price: price });
             tariffs.push({ start: 0, end: endHour, price: price });
         } else {
@@ -70,22 +73,40 @@ const formatTime = (totalHours) => {
 };
 
 export function calculateCharge(inputs) {
-    const params = { ...DEFAULTS, ...inputs };
-    const model = CHARGING_MODELS.quadratic;
+    const params = {
+        ...DEFAULTS,
+        ...inputs,
+        // 【修复】env_factors/battery_health 不能直接被 inputs 里的同名字段整体覆盖(浅合并)，
+        // 否则以后只传部分字段(比如只传 sentry_mode_on)，缺的字段(比如 base_power_w)会变成 undefined，级联出 NaN。
+        env_factors: { ...DEFAULTS.env_factors, ...(inputs.env_factors || {}) },
+        battery_health: { ...DEFAULTS.battery_health, ...(inputs.battery_health || {}) }
+    };
+    // 预留接口：以后要切换到更复杂的算法模型，只需要传 model_name，这里不用改
+    const model = CHARGING_MODELS[params.model_name] || CHARGING_MODELS.quadratic;
     const tariffs = parseTariffs(params.tariff_config);
 
+    // 【修复】补回原 Python 脚本里就有、网页版丢掉的边界校验
+    if (params.start_percentage < 0 || params.start_percentage > 100 || params.target_percentage < 0 || params.target_percentage > 100) {
+        return { error: "错误：电量百分比必须在0-100之间", error_code: "PERCENTAGE_OUT_OF_RANGE" };
+    }
+
     if (params.start_percentage >= params.target_percentage) {
-        return { error: "错误：目标电量必须大于起始电量" };
+        return { error: "错误：目标电量必须大于起始电量", error_code: "START_GTE_TARGET" };
     }
 
     const energy_needed = params.capacity * (params.target_percentage - params.start_percentage) / 100;
     const power_effective_max_kw = model.getEffectivePowerKw(params.max_current, params);
-    const grid_power_max_kw = params.max_current * params.Vs / 1000;
+    const grid_power_max_kw = params.max_current * params.Vs * params.phases / 1000; // 【修复】漏乘了 phases
     const max_charging_time_hours = energy_needed / power_effective_max_kw;
 
     const start_time_hours = params.start_hour + params.start_minute / 60;
     const end_time_hours = params.end_hour + params.end_minute / 60;
     const current_time_hours = params.current_hour + params.current_minute / 60;
+
+    // 【修复】开始和结束时间相同是非法输入(不是"整整24小时")，直接拒绝，而不是静默按24小时窗口计算
+    if (start_time_hours === end_time_hours) {
+        return { error: "错误：充电开始和结束时间不能相同", error_code: "INVALID_TIME_WINDOW" };
+    }
 
     let standard_window = end_time_hours - start_time_hours;
     if (standard_window <= 0) standard_window += 24;
@@ -101,21 +122,23 @@ export function calculateCharge(inputs) {
         if (now_to_end >= max_charging_time_hours) {
             let early_start = end_time_hours - max_charging_time_hours;
             if (early_start < 0) early_start += 24;
-            
+
             let cost_early = calculateCost(early_start, max_charging_time_hours, grid_power_max_kw, tariffs);
             let cost_late = calculateCost(start_time_hours, max_charging_time_hours, grid_power_max_kw, tariffs);
-            
             let late_end = start_time_hours + max_charging_time_hours;
 
             solutions.push({
                 type: '优选', color: 'var(--primary)',
                 title: `提前至 ${formatTime(early_start)} 预约开始`,
-                desc: `(利用倒推，明早 ${formatTime(end_time_hours)} 准时断电) 充满预估：<strong style="color: #10b981;">¥${cost_early}</strong>`
+                desc: `(开始时间提前，到 ${formatTime(end_time_hours)} 准时断电) 充满预估：<strong style="color: #10b981;">¥${cost_early}</strong>`
             });
+
+            // "死守 start_time_hours 开始"里的这个时刻，指的是它"下一次出现"的那个点：
+            // 今天还没到就是今天这个点，今天已经过了就是明天同一时刻——这是有意为之的设计。
             solutions.push({
                 type: '备选', color: '#6b7280',
                 title: `死守 ${formatTime(start_time_hours)} 开始，延后至 ${formatTime(late_end)} 结束`,
-                desc: `(占用早晨峰电) 充满预估：<strong style="color: #10b981;">¥${cost_late}</strong>`
+                desc: `(结束时间延后，多充部分不一定是谷电价) 充满预估：<strong style="color: #10b981;">¥${cost_late}</strong>`
             });
 
             const energy_in_window = power_effective_max_kw * standard_window;
@@ -141,7 +164,7 @@ export function calculateCharge(inputs) {
             let extra_str = extra_h > 0 ? `${extra_h}小时${extra_m}分` : `${extra_m}分`;
 
             fallback_stats = {
-                label: `💡 妥协：现在立刻开充，到明早 ${formatTime(end_time_hours)} 准时拔枪:`,
+                label: `💡 妥协：现在立刻开充，到 ${formatTime(end_time_hours)} 准时拔枪:`,
                 percent: percent_at_end,
                 energy: energy_now_to_end,
                 cost: cost_to_end
@@ -156,6 +179,7 @@ export function calculateCharge(inputs) {
 
         return {
             error: "需要用户介入决策",
+            error_code: "UNREACHABLE_IN_WINDOW",
             solutions: solutions,
             fallback_stats: fallback_stats
         };
@@ -178,7 +202,7 @@ export function calculateCharge(inputs) {
     }
 
     const optimal_current = model.calculateCurrent(energy_needed, available_duration, params);
-    if (optimal_current === null) return { error: "错误：无法计算" };
+    if (optimal_current === null) return { error: "错误：无法计算", error_code: "SOLVE_FAILED" };
 
     const current_power_effective_kw = model.getEffectivePowerKw(optimal_current, params);
     

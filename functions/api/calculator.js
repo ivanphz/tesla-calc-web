@@ -72,6 +72,13 @@ const formatTime = (totalHours) => {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 };
 
+const formatDuration = (hours) => {
+    const totalMinutes = Math.round(hours * 60);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return h > 0 ? `${h}小时${m}分` : `${m}分`;
+};
+
 export function calculateCharge(inputs) {
     const params = {
         ...DEFAULTS,
@@ -127,10 +134,19 @@ export function calculateCharge(inputs) {
             let cost_late = calculateCost(start_time_hours, max_charging_time_hours, grid_power_max_kw, tariffs);
             let late_end = start_time_hours + max_charging_time_hours;
 
+            // 电价表已经加载了，"提前/延后的这部分到底贵不贵"不是一件说不准的事，直接算出来展示金额，
+            // 不再用"不一定是谷电价"这种含糊的措辞。
+            // 提前的这段、延后的这段，本质上是同一个"多出来的时长"（只是被安排在标准时段的两侧），
+            // 用 max_charging_time_hours - standard_window 统一计算，不用再分别对着 early_start/late_end 减来减去——
+            // 减法容易在时段跨天(比如 22:00-07:00)时把"今天的这个点"和"明天的这个点"搞混，用这个差值就完全绕开了这个坑。
+            const extra_segment_hours = max_charging_time_hours - standard_window;
+            const early_segment_cost = calculateCost(early_start, extra_segment_hours, grid_power_max_kw, tariffs);
+            const late_segment_cost = calculateCost(end_time_hours, extra_segment_hours, grid_power_max_kw, tariffs);
+
             solutions.push({
                 type: '优选', color: 'var(--primary)',
                 title: `提前至 ${formatTime(early_start)} 预约开始`,
-                desc: `(开始时间提前，到 ${formatTime(end_time_hours)} 准时断电) 充满预估：<strong style="color: #10b981;">¥${cost_early}</strong>`
+                desc: `(比标准开始时间提前 ${formatDuration(extra_segment_hours)}，这部分预计花费 ¥${early_segment_cost}) 充满预估：<strong style="color: #10b981;">¥${cost_early}</strong>`
             });
 
             // "死守 start_time_hours 开始"里的这个时刻，指的是它"下一次出现"的那个点：
@@ -138,7 +154,7 @@ export function calculateCharge(inputs) {
             solutions.push({
                 type: '备选', color: '#6b7280',
                 title: `死守 ${formatTime(start_time_hours)} 开始，延后至 ${formatTime(late_end)} 结束`,
-                desc: `(结束时间延后，多充部分不一定是谷电价) 充满预估：<strong style="color: #10b981;">¥${cost_late}</strong>`
+                desc: `(比标准结束时间延后 ${formatDuration(extra_segment_hours)}，这部分预计花费 ¥${late_segment_cost}) 充满预估：<strong style="color: #10b981;">¥${cost_late}</strong>`
             });
 
             const energy_in_window = power_effective_max_kw * standard_window;
@@ -155,13 +171,7 @@ export function calculateCharge(inputs) {
             
             const total_cost = calculateCost(current_time_hours, max_charging_time_hours, grid_power_max_kw, tariffs);
             const late_end = current_time_hours + max_charging_time_hours;
-            
-            // 修复的时空碰撞进位 Bug
-            let extra_hours = max_charging_time_hours - now_to_end;
-            let extra_total_minutes = Math.round(extra_hours * 60);
-            let extra_h = Math.floor(extra_total_minutes / 60);
-            let extra_m = extra_total_minutes % 60;
-            let extra_str = extra_h > 0 ? `${extra_h}小时${extra_m}分` : `${extra_m}分`;
+            const extra_hours = max_charging_time_hours - now_to_end;
 
             fallback_stats = {
                 label: `💡 妥协：现在立刻开充，到 ${formatTime(end_time_hours)} 准时拔枪:`,
@@ -173,7 +183,7 @@ export function calculateCharge(inputs) {
             solutions.push({
                 type: '强迫症必选', color: '#f59e0b',
                 title: `现在立刻开充，延后至 ${formatTime(late_end)} 结束`,
-                desc: `(必须突破时段限制，额外多充 <strong style="color: #dc2626;">${extra_str}</strong> 才能充满) 总预估：<strong style="color: #10b981;">¥${total_cost}</strong>`
+                desc: `(必须突破时段限制，额外多充 <strong style="color: #dc2626;">${formatDuration(extra_hours)}</strong> 才能充满) 总预估：<strong style="color: #10b981;">¥${total_cost}</strong>`
             });
         }
 

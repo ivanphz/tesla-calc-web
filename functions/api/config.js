@@ -5,6 +5,7 @@ export const DEFAULTS = {
     R: 0.44,
     Vs: 224.2,
     phases: 1,       // 新增接口：单相电默认为 1。未来若换 380V 三相电桩，改为 3 即可
+    model_name: 'quadratic', // 预留接口：未来上线 advanced_non_linear 等模型时，切这个字段即可，calculateCharge 不用改
     target_percentage: 80,
     end_hour: 7,
     end_minute: 0,
@@ -28,10 +29,11 @@ export const CHARGING_MODELS = {
     quadratic: {
         calculateCurrent(energyNeeded, duration, params) {
             const powerIdealW = (energyNeeded / duration) * 1000;
-            const a = params.R;
-            // 引入相数：三相电的总电压等效为单相乘以相数
-            const b = -params.Vs * params.phases; 
-            const c = powerIdealW;
+            const basePowerW = params.env_factors ? params.env_factors.base_power_w : 0;
+            // a、c 必须和 getEffectivePowerKw 里的公式互为反函数，否则求出来的"最优电流"充不到目标电量
+            const a = params.R * params.phases;       // 【修复】loss 项也要乘 phases，和 getEffectivePowerKw 保持一致
+            const b = -params.Vs * params.phases;
+            const c = powerIdealW + basePowerW;        // 【修复】把车机基础耗电(哨兵/暖车等)加回来一起求解
             const delta = b * b - 4 * a * c;
 
             if (delta < 0) return null;
@@ -58,11 +60,15 @@ export const CHARGING_MODELS = {
     },
     
     // 未来阶段：处理涓流、动态压降与电池衰减的复杂非线性模型
+    // 【修复】函数签名统一成和 quadratic 一样 (calculateCurrent(energyNeeded, duration, params) / getEffectivePowerKw(current, params))，
+    // 这样以后真正实现这个模型时，只需要改 DEFAULTS.model_name，calculateCharge 里的调用代码不用动。
+    // 如果内部需要 startSoc/targetSoc/currentSoc，可以从 params 里读（calculateCharge 已经把 start_percentage/target_percentage 放进 params 了），
+    // 或者由 calculateCharge 在调用前把需要的字段一起塞进 params。
     advanced_non_linear: {
-        calculateCurrent(startSoc, targetSoc, duration, params) {
+        calculateCurrent(energyNeeded, duration, params) {
             throw new Error("Not implemented yet");
         },
-        getEffectivePowerKw(current, currentSoc, params) {
+        getEffectivePowerKw(current, params) {
             throw new Error("Not implemented yet");
         }
     }

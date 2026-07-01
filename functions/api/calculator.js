@@ -181,14 +181,23 @@ export function calculateCharge(inputs) {
     if (optimal_current === null) return { error: "错误：无法计算" };
 
     const current_power_effective_kw = model.getEffectivePowerKw(optimal_current, params);
-    const optimal_grid_power_kw = optimal_current * params.Vs / 1000;
-    const power_loss_kw = (params.R * (optimal_current ** 2)) / 1000;
     
-    const optimalCost = calculateCost(effective_start_hours, available_duration, optimal_grid_power_kw, tariffs);
+    // 【核心修改点】：如果触发了 5A 底线，会导致充电提前结束，必须重新推算实际耗时
+    let actual_duration = available_duration;
+    if (optimal_current === params.min_current) {
+        actual_duration = energy_needed / current_power_effective_kw;
+    }
+
+    // 引入三相电相数因子
+    const optimal_grid_power_kw = (optimal_current * params.Vs * params.phases) / 1000;
+    const power_loss_kw = (params.R * (optimal_current ** 2) * params.phases) / 1000;
+    
+    // 计费时，严格使用重算后的 actual_duration，避免 5A 场景下电费虚高
+    const optimalCost = calculateCost(effective_start_hours, actual_duration, optimal_grid_power_kw, tariffs);
 
     return {
         optimal_current: Number(optimal_current.toFixed(2)),
-        charging_duration: Number(available_duration.toFixed(2)),
+        charging_duration: Number(actual_duration.toFixed(2)),
         effective_power_kw: Number(current_power_effective_kw.toFixed(2)),
         loss_percentage: Number(((power_loss_kw / optimal_grid_power_kw) * 100).toFixed(2)),
         energy_added: Number(energy_needed.toFixed(2)),

@@ -43,7 +43,14 @@
         </div>
 
         <div class="control-group" style="margin-top: 32px;">
-            <label>目标电量: <span id="target-val-display" style="color: var(--primary);">90%</span></label>
+            <label style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+                <span style="white-space: nowrap;">目标电量: <span id="target-val-display" style="color: var(--primary);">90%</span></span>
+                <span id="target-sync-status" style="font-size: 0.85rem; font-weight: normal; white-space: nowrap;"></span>
+                <a href="javascript:void(0)" onclick="fetchRealTimeChargeLimit()" style="font-size: 0.85rem; margin-left: auto; color: var(--primary); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; background: white; white-space: nowrap; flex-shrink: 0;">↻ 还原车机目标</a>
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; font-weight: normal; font-size: 0.85rem; color: #6b7280; margin: 2px 0 12px; cursor: pointer;">
+                <input type="checkbox" id="sync-target-with-car" onchange="onSyncTargetToggle(this.checked)"> 打开页面时自动跟随车机设置的目标电量（关闭则使用下方手动设置）
+            </label>
             <div class="stepper" style="margin-bottom: 12px;">
                 <button type="button" onclick="adjustTarget(-1)">-</button>
                 <input type="number" id="target-battery" value="90" min="50" max="100" onchange="syncTarget(this.value)">
@@ -65,17 +72,30 @@
                 <button type="button" id="btn-time-night" onclick="setTimeSlot('22:00', '07:00', this)" class="active">谷电 (22:00-07:00)</button>
                 <button type="button" id="btn-time-noon" onclick="setTimeSlot('11:00', '13:00', this)">午间 (11:00-13:00)</button>
             </div>
-            <div class="time-inputs" style="display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
-                <div style="display: flex; gap: 4px; align-items: center;">
-                    <button type="button" onclick="adjustTime('start-time', -5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">-</button>
-                    <input type="time" id="start-time" value="22:00" onchange="saveSettings()" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; flex-shrink: 0;">
-                    <button type="button" onclick="adjustTime('start-time', 5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">+</button>
+            <div class="time-inputs" style="display: flex; align-items: flex-start; gap: 12px; margin-top: 12px; flex-wrap: wrap;">
+                <div>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <button type="button" onclick="adjustTime('start-time', -5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">-</button>
+                        <input type="time" id="start-time" value="22:00" onchange="updateTimeBtnUI(); saveSettings()" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; flex-shrink: 0;">
+                        <button type="button" onclick="adjustTime('start-time', 5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">+</button>
+                    </div>
+                    <div class="quick-btns" style="margin-top: 6px; gap: 4px;">
+                        <button type="button" style="padding: 3px 8px; font-size: 0.8rem;" onclick="setStartTimeNow()">当前</button>
+                        <button type="button" style="padding: 3px 8px; font-size: 0.8rem;" onclick="setStartTime('22:00')">22点</button>
+                        <button type="button" style="padding: 3px 8px; font-size: 0.8rem;" onclick="setStartTime('11:00')">11点</button>
+                    </div>
                 </div>
-                <span style="white-space: nowrap;">至</span>
-                <div style="display: flex; gap: 4px; align-items: center;">
-                    <button type="button" onclick="adjustTime('end-time', -5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">-</button>
-                    <input type="time" id="end-time" value="07:00" onchange="saveSettings()" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; flex-shrink: 0;">
-                    <button type="button" onclick="adjustTime('end-time', 5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">+</button>
+                <span style="white-space: nowrap; margin-top: 6px;">至</span>
+                <div>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <button type="button" onclick="adjustTime('end-time', -5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">-</button>
+                        <input type="time" id="end-time" value="07:00" onchange="updateTimeBtnUI(); saveSettings()" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; flex-shrink: 0;">
+                        <button type="button" onclick="adjustTime('end-time', 5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">+</button>
+                    </div>
+                    <div class="quick-btns" style="margin-top: 6px; gap: 4px;">
+                        <button type="button" style="padding: 3px 8px; font-size: 0.8rem;" onclick="setEndTime('07:00')">7点</button>
+                        <button type="button" style="padding: 3px 8px; font-size: 0.8rem;" onclick="setEndTime('13:00')">13点</button>
+                    </div>
                 </div>
             </div>
         </div>

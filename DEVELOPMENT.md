@@ -91,7 +91,7 @@ HTTP 层     charge.js  (解析 URL 参数、兜底、统一错误信封)
 
 ### 手动微调电流（forced_current）
 
-输入里带 `forced_current` 时，编排层**不调用模型求解**，直接 `buildSegment(forced_current, energy_needed, params)` 出一个单段计划——车机本来就只能设一个恒定电流，所以人工模式天然是单段，这个语义对任何模型（包括未来的多段涓流）都成立。范围校验（min/max）只在 `calculateCharge` 里做一处。调低电流可能拖过结束时间：结果里 `window_overrun_hours` 给出超出量，电费按真实时间轴逐段计费（超出部分落进峰价会如实变贵，这正是这个功能想让人看见的 tradeoff）。
+输入里带 `forced_current` 时，编排层**不调用模型求解**，直接 `buildSegment(forced_current, energy_needed, params)` 出一个单段计划——车机本来就只能设一个恒定电流，所以人工模式天然是单段，这个语义对任何模型（包括未来的多段涓流）都成立。范围校验（min/max）只在 `calculateCharge` 里做一处。调低电流导致到点充不满时，主结果采用**到点截断**语义（第一逻辑）：时长/电量/电费展示"到结束时间为止"的数据，`reached_percentage` 给出届时可达电量；"要充满还需延后多久（`window_overrun_hours`）、总共多少钱（`full_charge_cost`，按真实时间轴逐段计费，超出部分落进峰价会如实变贵）"是附带提示。截断的电量/电费分别由 `planWindowEnergy` 和 `planCost` 的 capHours 参数按段消耗时间预算得出，对多段模型同样成立。
 
 ---
 

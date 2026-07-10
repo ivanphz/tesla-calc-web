@@ -96,6 +96,7 @@ tesla-calc-web/
   "loss_percentage": 4.78,
   "energy_added": 46.8,
   "cost": 18.59,
+  "reached_percentage": 80,
   "window_overrun_hours": 0,
   "min_current": 5,
   "max_current": 32,
@@ -103,7 +104,7 @@ tesla-calc-web/
 }
 ```
 
-`window_overrun_hours`：手动把电流调低时充电会拖过结束时间，这里给出超出的小时数（0 = 按时完成）；超出部分的电价已如实计入 `cost`。`min_current`/`max_current`：前端微调按钮的步进边界（来源是 config.js）。`plan.segments`：分段计划（见预留接口）。
+手动电流（`forced_current`）导致到点充不满时，采用**到点截断**语义：`charging_duration`/`energy_added`/`cost` 展示的是"到结束时间为止"的真实数据，`reached_percentage` 是届时能充到的电量百分比（能按时充满时它等于目标电量）。"要充满还需多久/多少钱"是附带字段：`window_overrun_hours`（超出结束时间的小时数，0 = 按时充满）和 `full_charge_cost`（仅超窗时返回）。`min_current`/`max_current`：前端微调按钮的步进边界（来源是 config.js）。`plan.segments`：分段计划（见预留接口），始终描述充满到目标的完整计划、不做截断。
 
 失败时 `result` 带 `error` + 机器可读的 `error_code`：
 

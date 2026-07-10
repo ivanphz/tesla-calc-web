@@ -13,15 +13,33 @@ function planTotals(plan) {
 }
 
 // 从 startHour 开始，把计划里的各段依次排在时间轴上，逐段按各自功率计费后求和。
-// 单段时等价于对整段直接 calculateCost，所以 quadratic 的电费和改造前逐位一致。
-function planCost(plan, startHour, tariffs) {
+// capHours 是时间预算上限：到点截断的场景传可用时长，正常场景不传（不设限）。
+// 单段且不截断时等价于对整段直接 calculateCost，所以 quadratic 的电费和改造前逐位一致。
+function planCost(plan, startHour, tariffs, capHours = Infinity) {
     let t = startHour;
     let cost = 0;
+    let budget = capHours;
     for (const s of plan.segments) {
-        cost += calculateCost(t, s.durationHours, s.gridPowerKw, tariffs);
-        t += s.durationHours;
+        if (budget <= 1e-9) break;
+        const d = Math.min(s.durationHours, budget);
+        cost += calculateCost(t, d, s.gridPowerKw, tariffs);
+        t += d;
+        budget -= d;
     }
     return Number(cost.toFixed(2));
+}
+
+// 时间预算内实际能充入的电量（逐段消耗预算，多段模型同样成立）
+function planWindowEnergy(plan, capHours) {
+    let budget = capHours;
+    let energy = 0;
+    for (const s of plan.segments) {
+        if (budget <= 1e-9) break;
+        const d = Math.min(s.durationHours, budget);
+        energy += s.effectivePowerKw * d;
+        budget -= d;
+    }
+    return energy;
 }
 
 // 段的对外展示版本（取整），放进结果的 plan.segments 里给前端/自动化按段渲染
@@ -201,23 +219,36 @@ export function calculateCharge(inputs) {
 
     const totals = planTotals(plan);
     const head = plan.segments[0]; // 标量字段（单一电流/功率）取首段；多段模型请读下方 plan.segments
-    const optimalCost = planCost(plan, effective_start_hours, tariffs);
+
+    // 手动把电流调低时，充电会拖过结束时间。第一逻辑是"到点截断"：
+    // 主结果（时长/电量/电费）展示"到结束时间为止"的真实情况，以及届时能充到多少电量；
+    // "要充满还需延后多久、总共多少钱"降级为附带提示字段（window_overrun_hours / full_charge_cost）。
+    const overrun_hours = Math.max(0, totals.durationHours - available_duration);
+    const is_truncated = overrun_hours > 1e-9;
+
+    const shown_duration = is_truncated ? available_duration : totals.durationHours;
+    const shown_energy = is_truncated ? planWindowEnergy(plan, available_duration) : totals.energyKwh;
+    const shown_cost = planCost(plan, effective_start_hours, tariffs, shown_duration);
+    const reached_percentage = Math.min(100, params.start_percentage + (shown_energy / params.capacity) * 100);
 
     return {
         optimal_current: Number(head.current.toFixed(2)),
-        charging_duration: Number(totals.durationHours.toFixed(2)),
+        charging_duration: Number(shown_duration.toFixed(2)),
         effective_power_kw: Number(head.effectivePowerKw.toFixed(2)),
         loss_percentage: Number(((head.lossKw / head.gridPowerKw) * 100).toFixed(2)),
-        energy_added: Number(totals.energyKwh.toFixed(2)),
-        cost: optimalCost,
-        // 手动把电流调低时充电会拖过结束时间：这里给出超出的小时数（0 = 能按时完成）。
-        // 电费已按真实时间轴逐段计费，超出部分若落进峰电价，cost 会如实变贵。
-        window_overrun_hours: Number(Math.max(0, totals.durationHours - available_duration).toFixed(2)),
+        energy_added: Number(shown_energy.toFixed(2)),
+        // 到结束时间能充到的电量百分比。能按时充满时它就等于目标电量。
+        reached_percentage: Number(reached_percentage.toFixed(1)),
+        cost: shown_cost,
+        // 附带提示：要充满到目标还需超出结束时间多久（0 = 按时充满），以及届时的充满总费
+        window_overrun_hours: Number(overrun_hours.toFixed(2)),
+        ...(is_truncated ? { full_charge_cost: planCost(plan, effective_start_hours, tariffs) } : {}),
         // 前端手动微调按钮的边界（来源只有 config.js 一处）
         min_current: params.min_current,
         max_current: params.max_current,
         // 预留的分段渲染接口：quadratic 下永远是 1 段；涓流模型接入后这里会是多段，
         // 前端可据此画出"每段各用多大电流、各多久"，而不用改后端。
+        // 注意：plan 始终描述"充满到目标"的完整计划，不做截断。
         plan: { segments: plan.segments.map(roundSegmentForOutput) }
     };
 }

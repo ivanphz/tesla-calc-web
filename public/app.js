@@ -208,7 +208,7 @@ let lastCalc = null;
 // 没有这个保护，快速连点"+"时第二次点击读到的还是旧电流，会发出重复请求、丢掉步进。
 let calcInFlight = false;
 
-async function calculate(forcedCurrent = null) {
+async function calculate(forcedCurrent = null, quiet = false) {
     if (calcInFlight) return;
     calcInFlight = true;
     saveSettings(); 
@@ -233,9 +233,13 @@ async function calculate(forcedCurrent = null) {
     });
     if (forcedCurrent != null) params.set('forced_current', forcedCurrent);
 
-    document.getElementById('normal-result').style.display = 'none';
-    document.getElementById('warning-result').style.display = 'none';
-    document.getElementById('loading').style.display = 'block';
+    // quiet = 微调/还原电流时的静默刷新：面板留在原地、数值原地更新，
+    // 不走"隐藏面板→显示加载中→再显示"的流程（那是给"开始计算"用的，微调时会造成整栏闪没）
+    if (!quiet) {
+        document.getElementById('normal-result').style.display = 'none';
+        document.getElementById('warning-result').style.display = 'none';
+        document.getElementById('loading').style.display = 'block';
+    }
 
     try {
         const response = await fetch(`/api/charge?${params.toString()}`);
@@ -302,14 +306,19 @@ async function calculate(forcedCurrent = null) {
             const status = document.getElementById('current-adjust-status');
             status.innerText = forcedCurrent != null ? `(手动 ${r.optimal_current}A，最优 ${lastCalc.optimal}A)` : '';
 
-            // 手动调低电流可能拖过结束时间：后端给出超出量，这里如实提示
+            // 电流调低导致到点充不满时：主结果(上面几行)已经是"到结束时间截断"的数据，
+            // 这里额外亮出"结束时可达电量"这一行，并把"要充满还需延后多久"作为附带提示。
+            const reachedRow = document.getElementById('res-reached-row');
             const note = document.getElementById('overrun-note');
             if (r.window_overrun_hours > 0) {
+                document.getElementById('res-reached').innerText = r.reached_percentage + ' %';
+                reachedRow.style.display = 'flex';
                 const mins = Math.round(r.window_overrun_hours * 60);
                 const h = Math.floor(mins / 60), m = mins % 60;
-                note.innerText = `⚠️ 该电流下无法在结束时间前充满，将超出 ${h > 0 ? h + '小时' : ''}${m}分（超出部分电价已计入总费）`;
+                note.innerText = `💡 如需充满至 ${data.inputs.target_percentage}%，需延后 ${h > 0 ? h + '小时' : ''}${m}分 结束（充满总费 ¥${r.full_charge_cost.toFixed(2)}）`;
                 note.style.display = 'block';
             } else {
+                reachedRow.style.display = 'none';
                 note.style.display = 'none';
             }
         }
@@ -335,12 +344,12 @@ function adjustResultCurrent(delta) {
     }
     next = Math.min(lastCalc.max, Math.max(lastCalc.min, next));
     if (next === cur) return; // 已到边界或吸附后无变化，不发多余请求
-    return calculate(next);
+    return calculate(next, true); // quiet：面板不闪没，数值原地刷新
 }
 
 function restoreOptimalCurrent() {
     if (!lastCalc) return;
-    return calculate(); // 不带 forced_current，重新求解最优
+    return calculate(null, true); // 不带 forced_current，重新求解最优；同样静默刷新
 }
 
 // === 新增：时间输入框加减与智能吸附逻辑 ===

@@ -114,6 +114,10 @@ input[type="range"] { width: 100%; margin: 10px 0; }
     color: var(--warning-text); padding: 8px 10px; border-radius: 6px; font-size: 0.85rem; margin: 4px 0 8px;
 }
 
+/* "结束时可达电量"行：仅在电流调低导致到点充不满时显示（JS 控制），是截断模式下的主信息 */
+.reached-row { display: none; }
+.reached-row .result-val { color: #dc2626; }
+
 .btn-calc { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 1.15rem; font-weight: bold; cursor: pointer; transition: 0.2s; margin-top: 10px; }
 .btn-calc:hover { background: var(--primary-hover); }
 

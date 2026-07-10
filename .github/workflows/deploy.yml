@@ -19,5 +19,6 @@ jobs:
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          # 核心修改：指定 public 为静态部署目录
+          # public 是静态部署目录；--project-name 后面是 Cloudflare Pages 里的项目名，
+          # 改项目名就改这一处（这是本仓库唯一写项目名的地方）。
           command: pages deploy public --project-name=tesla-calc-web

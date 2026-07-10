@@ -1,89 +1,52 @@
-import { DEFAULTS, CHARGING_MODELS } from './config.js';
+import { DEFAULTS, CHARGING_MODELS, buildSegment } from './config.js';
+import { parseTariffs, calculateCost } from './tariff.js';
+import { formatTime, formatDuration } from './time-utils.js';
 
-function parseTariffs(tariffStr) {
-    if (!tariffStr) return [];
-    const tariffs = [];
-    const periods = tariffStr.replace(/\n/g, ',').split(',');
-    
-    for (const p of periods) {
-        if (!p.trim()) continue;
-        const [timeRange, priceStr] = p.split('=');
-        if (!timeRange || !priceStr) continue;
-        
-        const [startStr, endStr] = timeRange.split('-');
-        const price = parseFloat(priceStr);
-        
-        const startHour = parseInt(startStr.split(':')[0]) + parseInt(startStr.split(':')[1]||0)/60;
-        let endHour = parseInt(endStr.split(':')[0]) + parseInt(endStr.split(':')[1]||0)/60;
-        
-        // 【修复】start===end 是无效时段（不是"整整24小时"），直接跳过，避免误算成全天覆盖
-        if (endHour === startHour) continue;
-        
-        // 核心修改：将跨天的时段物理拆分为当天的两个独立区间，抹平跨天计算的心智负担
-        if (endHour < startHour) {
-            tariffs.push({ start: startHour, end: 24, price: price });
-            tariffs.push({ start: 0, end: endHour, price: price });
-        } else {
-            tariffs.push({ start: startHour, end: endHour, price: price });
-        }
-    }
-    return tariffs;
+// —— 计划(plan)的通用辅助，与具体模型无关 ——
+
+// 把一个计划的所有段累加成总时长/总电量
+function planTotals(plan) {
+    return plan.segments.reduce(
+        (acc, s) => ({ durationHours: acc.durationHours + s.durationHours, energyKwh: acc.energyKwh + s.energyKwh }),
+        { durationHours: 0, energyKwh: 0 }
+    );
 }
 
-function calculateCost(startHour, durationHours, gridPowerKw, tariffs) {
-    if (!tariffs || tariffs.length === 0) return 0;
-    
-    let totalCost = 0;
-    let remainingDuration = durationHours;
-    let currentStart = startHour % 24; 
-    
-    // 处理单次充电时间极长，可能跨越多个 24 小时周期的情况
-    while (remainingDuration > 0.0001) { 
-        // 划定当前这“一天”内的计算窗口，最长算到 24:00
-        const currentEnd = Math.min(currentStart + remainingDuration, 24);
-        const stepDuration = currentEnd - currentStart;
-        
-        // 遍历所有当天电价区间，求线段交集
-        for (const t of tariffs) {
-            const intersectStart = Math.max(currentStart, t.start);
-            const intersectEnd = Math.min(currentEnd, t.end);
-            
-            if (intersectStart < intersectEnd) {
-                const overlapHours = intersectEnd - intersectStart;
-                totalCost += overlapHours * gridPowerKw * t.price;
-            }
-        }
-        
-        remainingDuration -= stepDuration;
-        currentStart = 0; // 如果还有剩余时长，说明跨入了第二天，第二天从 00:00 开始算
+// 从 startHour 开始，把计划里的各段依次排在时间轴上，逐段按各自功率计费后求和。
+// 单段时等价于对整段直接 calculateCost，所以 quadratic 的电费和改造前逐位一致。
+function planCost(plan, startHour, tariffs) {
+    let t = startHour;
+    let cost = 0;
+    for (const s of plan.segments) {
+        cost += calculateCost(t, s.durationHours, s.gridPowerKw, tariffs);
+        t += s.durationHours;
     }
-    
-    return Number(totalCost.toFixed(2));
+    return Number(cost.toFixed(2));
 }
 
-const formatTime = (totalHours) => {
-    // 转换为纯整数分钟进行运算，规避所有浮点数残留和进位缺失
-    let totalMinutes = Math.round(totalHours * 60);
-    // 抹平负数跨天和超长跨天的模运算
-    totalMinutes = ((totalMinutes % 1440) + 1440) % 1440;
-    
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-};
+// 段的对外展示版本（取整），放进结果的 plan.segments 里给前端/自动化按段渲染
+function roundSegmentForOutput(s) {
+    return {
+        current: Number(s.current.toFixed(2)),
+        energy_kwh: Number(s.energyKwh.toFixed(2)),
+        effective_power_kw: Number(s.effectivePowerKw.toFixed(2)),
+        grid_power_kw: Number(s.gridPowerKw.toFixed(2)),
+        loss_percentage: Number(((s.lossKw / s.gridPowerKw) * 100).toFixed(2)),
+        duration_hours: Number(s.durationHours.toFixed(2))
+    };
+}
 
-const formatDuration = (hours) => {
-    const totalMinutes = Math.round(hours * 60);
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-    return h > 0 ? `${h}小时${m}分` : `${m}分`;
-};
-
+// 核心编排逻辑：给定当前电量、目标电量、基准充电时段和"现在几点"，算出：
+//   1. 能不能在基准时段内充满 —— 能的话，给出损耗最低（=花费最低）的充电计划；
+//   2. 充不满的话，进入"时空碰撞"分支：看能不能提前开始/延后结束来凑够时间，
+//      提供具体方案；连这个也来不及，就退而求其次算出"现在立刻充，能充到多少"。
+// 全程只跟模型返回的「计划(plan)」打交道，不关心计划里是 1 段还是 N 段。
+// 详细算法与扩展方式见仓库根目录 DEVELOPMENT.md。
 export function calculateCharge(inputs) {
     const params = {
         ...DEFAULTS,
         ...inputs,
-        // 【修复】env_factors/battery_health 不能直接被 inputs 里的同名字段整体覆盖(浅合并)，
+        // env_factors/battery_health 是嵌套对象，不能被 inputs 里的同名字段整体覆盖(浅合并)，
         // 否则以后只传部分字段(比如只传 sentry_mode_on)，缺的字段(比如 base_power_w)会变成 undefined，级联出 NaN。
         env_factors: { ...DEFAULTS.env_factors, ...(inputs.env_factors || {}) },
         battery_health: { ...DEFAULTS.battery_health, ...(inputs.battery_health || {}) }
@@ -92,7 +55,6 @@ export function calculateCharge(inputs) {
     const model = CHARGING_MODELS[params.model_name] || CHARGING_MODELS.quadratic;
     const tariffs = parseTariffs(params.tariff_config);
 
-    // 【修复】补回原 Python 脚本里就有、网页版丢掉的边界校验
     if (params.start_percentage < 0 || params.start_percentage > 100 || params.target_percentage < 0 || params.target_percentage > 100) {
         return { error: "错误：电量百分比必须在0-100之间", error_code: "PERCENTAGE_OUT_OF_RANGE" };
     }
@@ -101,16 +63,30 @@ export function calculateCharge(inputs) {
         return { error: "错误：目标电量必须大于起始电量", error_code: "START_GTE_TARGET" };
     }
 
+    // 手动微调电流（可选输入）：范围校验只放在这一处（这里才知道 min/max）
+    if (params.forced_current != null && (params.forced_current < params.min_current || params.forced_current > params.max_current)) {
+        return {
+            error: `错误：电流必须在 ${params.min_current}-${params.max_current}A 之间`,
+            error_code: "CURRENT_OUT_OF_RANGE"
+        };
+    }
+
     const energy_needed = params.capacity * (params.target_percentage - params.start_percentage) / 100;
-    const power_effective_max_kw = model.getEffectivePowerKw(params.max_current, params);
-    const grid_power_max_kw = params.max_current * params.Vs * params.phases / 1000; // 【修复】漏乘了 phases
-    const max_charging_time_hours = energy_needed / power_effective_max_kw;
+
+    // 最大功率狂充计划：用于"够不够时间充满"的判断，以及充不满时的兜底展示。
+    // 碰撞分支目前把它当成"单一恒定最大功率"来推算提前/延后方案 —— 这对 quadratic(永远单段)精确；
+    // 未来多段涓流模型接入时，下面这几个 max 速率是首段值、碰撞分支需要重看（见 DEVELOPMENT.md）。
+    const maxPlan = model.planMaxPower({ energyNeeded: energy_needed, params });
+    const maxSeg = maxPlan.segments[0];
+    const power_effective_max_kw = maxSeg.effectivePowerKw;
+    const grid_power_max_kw = maxSeg.gridPowerKw;
+    const max_charging_time_hours = planTotals(maxPlan).durationHours;
 
     const start_time_hours = params.start_hour + params.start_minute / 60;
     const end_time_hours = params.end_hour + params.end_minute / 60;
     const current_time_hours = params.current_hour + params.current_minute / 60;
 
-    // 【修复】开始和结束时间相同是非法输入(不是"整整24小时")，直接拒绝，而不是静默按24小时窗口计算
+    // 开始和结束时间相同是非法输入(不是"整整24小时")，直接拒绝，而不是静默按24小时窗口计算
     if (start_time_hours === end_time_hours) {
         return { error: "错误：充电开始和结束时间不能相同", error_code: "INVALID_TIME_WINDOW" };
     }
@@ -144,22 +120,25 @@ export function calculateCharge(inputs) {
             const late_segment_cost = calculateCost(end_time_hours, extra_segment_hours, grid_power_max_kw, tariffs);
 
             solutions.push({
-                type: '优选', color: 'var(--primary)',
+                type: '优选',
+                cost: cost_early,
                 title: `提前至 ${formatTime(early_start)} 预约开始`,
-                desc: `(比标准开始时间提前 ${formatDuration(extra_segment_hours)}，这部分预计花费 ¥${early_segment_cost}) 充满预估：<strong style="color: #10b981;">¥${cost_early}</strong>`
+                desc: `(比标准开始时间提前 ${formatDuration(extra_segment_hours)}，这部分预计花费 ¥${early_segment_cost}) 充满预估：<strong class="text-success">¥${cost_early}</strong>`
             });
 
             // "死守 start_time_hours 开始"里的这个时刻，指的是它"下一次出现"的那个点：
             // 今天还没到就是今天这个点，今天已经过了就是明天同一时刻——这是有意为之的设计。
             solutions.push({
-                type: '备选', color: '#6b7280',
+                type: '备选',
+                cost: cost_late,
                 title: `死守 ${formatTime(start_time_hours)} 开始，延后至 ${formatTime(late_end)} 结束`,
-                desc: `(比标准结束时间延后 ${formatDuration(extra_segment_hours)}，这部分预计花费 ¥${late_segment_cost}) 充满预估：<strong style="color: #10b981;">¥${cost_late}</strong>`
+                desc: `(比标准结束时间延后 ${formatDuration(extra_segment_hours)}，这部分预计花费 ¥${late_segment_cost}) 充满预估：<strong class="text-success">¥${cost_late}</strong>`
             });
 
             const energy_in_window = power_effective_max_kw * standard_window;
             fallback_stats = {
                 label: `💡 若坚守 ${formatTime(start_time_hours)}-${formatTime(end_time_hours)} 不提前不延后:`,
+                max_current: params.max_current,
                 percent: Math.min(100, params.start_percentage + (energy_in_window / params.capacity) * 100),
                 energy: energy_in_window,
                 cost: calculateCost(start_time_hours, standard_window, grid_power_max_kw, tariffs)
@@ -175,15 +154,17 @@ export function calculateCharge(inputs) {
 
             fallback_stats = {
                 label: `💡 妥协：现在立刻开充，到 ${formatTime(end_time_hours)} 准时拔枪:`,
+                max_current: params.max_current,
                 percent: percent_at_end,
                 energy: energy_now_to_end,
                 cost: cost_to_end
             };
 
             solutions.push({
-                type: '强迫症必选', color: '#f59e0b',
+                type: '强迫症必选',
+                cost: total_cost,
                 title: `现在立刻开充，延后至 ${formatTime(late_end)} 结束`,
-                desc: `(必须突破时段限制，额外多充 <strong style="color: #dc2626;">${formatDuration(extra_hours)}</strong> 才能充满) 总预估：<strong style="color: #10b981;">¥${total_cost}</strong>`
+                desc: `(必须突破时段限制，额外多充 <strong class="text-danger">${formatDuration(extra_hours)}</strong> 才能充满) 总预估：<strong class="text-success">¥${total_cost}</strong>`
             });
         }
 
@@ -211,30 +192,32 @@ export function calculateCharge(inputs) {
         available_duration = now_to_end; 
     }
 
-    const optimal_current = model.calculateCurrent(energy_needed, available_duration, params);
-    if (optimal_current === null) return { error: "错误：无法计算", error_code: "SOLVE_FAILED" };
+    // 手动微调模式：不求解，直接按人指定的电流出一个单段计划。
+    // 车机本来就只能设一个恒定电流，所以人工模式天然是单段——这个语义对任何模型都成立，不经过 model。
+    const plan = params.forced_current != null
+        ? { segments: [buildSegment(params.forced_current, energy_needed, params)] }
+        : model.planOptimal({ energyNeeded: energy_needed, duration: available_duration, params });
+    if (plan === null) return { error: "错误：无法计算", error_code: "SOLVE_FAILED" };
 
-    const current_power_effective_kw = model.getEffectivePowerKw(optimal_current, params);
-    
-    // 【核心修改点】：如果触发了 5A 底线，会导致充电提前结束，必须重新推算实际耗时
-    let actual_duration = available_duration;
-    if (optimal_current === params.min_current) {
-        actual_duration = energy_needed / current_power_effective_kw;
-    }
-
-    // 引入三相电相数因子
-    const optimal_grid_power_kw = (optimal_current * params.Vs * params.phases) / 1000;
-    const power_loss_kw = (params.R * (optimal_current ** 2) * params.phases) / 1000;
-    
-    // 计费时，严格使用重算后的 actual_duration，避免 5A 场景下电费虚高
-    const optimalCost = calculateCost(effective_start_hours, actual_duration, optimal_grid_power_kw, tariffs);
+    const totals = planTotals(plan);
+    const head = plan.segments[0]; // 标量字段（单一电流/功率）取首段；多段模型请读下方 plan.segments
+    const optimalCost = planCost(plan, effective_start_hours, tariffs);
 
     return {
-        optimal_current: Number(optimal_current.toFixed(2)),
-        charging_duration: Number(actual_duration.toFixed(2)),
-        effective_power_kw: Number(current_power_effective_kw.toFixed(2)),
-        loss_percentage: Number(((power_loss_kw / optimal_grid_power_kw) * 100).toFixed(2)),
-        energy_added: Number(energy_needed.toFixed(2)),
-        cost: optimalCost
+        optimal_current: Number(head.current.toFixed(2)),
+        charging_duration: Number(totals.durationHours.toFixed(2)),
+        effective_power_kw: Number(head.effectivePowerKw.toFixed(2)),
+        loss_percentage: Number(((head.lossKw / head.gridPowerKw) * 100).toFixed(2)),
+        energy_added: Number(totals.energyKwh.toFixed(2)),
+        cost: optimalCost,
+        // 手动把电流调低时充电会拖过结束时间：这里给出超出的小时数（0 = 能按时完成）。
+        // 电费已按真实时间轴逐段计费，超出部分若落进峰电价，cost 会如实变贵。
+        window_overrun_hours: Number(Math.max(0, totals.durationHours - available_duration).toFixed(2)),
+        // 前端手动微调按钮的边界（来源只有 config.js 一处）
+        min_current: params.min_current,
+        max_current: params.max_current,
+        // 预留的分段渲染接口：quadratic 下永远是 1 段；涓流模型接入后这里会是多段，
+        // 前端可据此画出"每段各用多大电流、各多久"，而不用改后端。
+        plan: { segments: plan.segments.map(roundSegmentForOutput) }
     };
 }

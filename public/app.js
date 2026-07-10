@@ -10,8 +10,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (prefs.target) syncTarget(prefs.target, false);
         if (prefs.startTime) document.getElementById('start-time').value = prefs.startTime;
         if (prefs.endTime) document.getElementById('end-time').value = prefs.endTime;
-        if (prefs.tariff) document.getElementById('tariff-config').value = prefs.tariff;
-        if (prefs.start) syncStart(prefs.start, false);
+        // 用 != null 而不是 if(prefs.start)：电量 0% 保存后是字符串 "0"，是假值，
+        // 直接真值判断会把这个合法的 0 吞掉（和之前修过的 parseInt(x)||默认值 是同一类问题）
+        if (prefs.start != null && prefs.start !== '') syncStart(prefs.start, false);
     }
     // "谷电/午间"高亮不再单独存一份状态，而是每次都直接从当前的开始/结束时间反推——
     // 这样它就不可能和实际时间"看起来同步了、其实没同步"，因为它本来就是算出来的，不是记出来的。
@@ -96,7 +97,7 @@ async function fetchRealTimeChargeLimit() {
 }
 
 function toggleTariffSettings() {
-    const el = document.getElementById('tariff-config');
+    const el = document.getElementById('tariff-panel');
     el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
@@ -105,8 +106,7 @@ function saveSettings() {
         start: document.getElementById('start-battery').value,
         target: document.getElementById('target-battery').value,
         startTime: document.getElementById('start-time').value,
-        endTime: document.getElementById('end-time').value,
-        tariff: document.getElementById('tariff-config').value
+        endTime: document.getElementById('end-time').value
     };
     localStorage.setItem('tesla_calc_prefs', JSON.stringify(prefs));
 }
@@ -198,7 +198,19 @@ function setEndTime(timeStr) {
     saveSettings();
 }
 
-async function calculate() {
+// === 计算与结果渲染 ===
+// lastCalc 记录最近一次成功计算的关键信息，供"微调电流"使用：
+//   optimal   —— 求解出的最优电流（还原按钮回到这里）
+//   displayed —— 当前展示的电流（微调按钮在它基础上步进）
+//   min/max   —— 步进边界，来自后端返回（源头是 config.js，前端不写死）
+let lastCalc = null;
+// 在途保护：上一次计算还没返回时忽略新的触发。
+// 没有这个保护，快速连点"+"时第二次点击读到的还是旧电流，会发出重复请求、丢掉步进。
+let calcInFlight = false;
+
+async function calculate(forcedCurrent = null) {
+    if (calcInFlight) return;
+    calcInFlight = true;
     saveSettings(); 
     const start = document.getElementById('start-battery').value;
     const target = document.getElementById('target-battery').value;
@@ -216,9 +228,10 @@ async function calculate() {
         end_hour: endTime[0],
         end_minute: endTime[1],
         current_hour: currHour,
-        current_minute: currMinute,
-        tariff: document.getElementById('tariff-config').value
+        current_minute: currMinute
+        // 电价不再由前端传递：后端统一用 config.js 里的 DEFAULTS.tariff_config
     });
+    if (forcedCurrent != null) params.set('forced_current', forcedCurrent);
 
     document.getElementById('normal-result').style.display = 'none';
     document.getElementById('warning-result').style.display = 'none';
@@ -229,6 +242,12 @@ async function calculate() {
         const data = await response.json();
         document.getElementById('loading').style.display = 'none';
 
+        // 回填只读电价展示（后端实际采用的电价，永远和计算用的一致）
+        if (data.inputs && data.inputs.tariff_config != null) {
+            document.getElementById('tariff-display').innerText =
+                data.inputs.tariff_config || '(未配置电价，本次计算不含电费)';
+        }
+
         if (data.result.error) {
             if (data.result.error_code === 'UNREACHABLE_IN_WINDOW') {
                 // == 时段内充不满：渲染完整的 fallback_stats + solutions 面板 ==
@@ -236,6 +255,7 @@ async function calculate() {
 
                 const fb = data.result.fallback_stats;
                 document.getElementById('warn-fallback-label').innerText = fb.label;
+                document.getElementById('warn-max-current').innerText = fb.max_current;
                 document.getElementById('warn-reachable').innerText = fb.percent.toFixed(1) + '%';
                 document.getElementById('warn-fallback-energy').innerText = fb.energy.toFixed(1) + ' kWh';
                 document.getElementById('warn-fallback-cost').innerText = '¥ ' + fb.cost.toFixed(2);
@@ -243,32 +263,84 @@ async function calculate() {
                 const ul = document.getElementById('warn-solutions-list');
                 ul.innerHTML = '';
 
+                // type -> CSS 修饰类，具体颜色值都放在 style.css 里，这里只决定"是哪一种"
+                const typeClass = {
+                    '优选': 'solution-item--preferred',
+                    '备选': 'solution-item--alternative',
+                    '强迫症必选': 'solution-item--forced'
+                };
+
                 data.result.solutions.forEach(sol => {
                     ul.innerHTML += `
-                        <li style="margin-bottom: 14px; padding-left: 10px; border-left: 4px solid ${sol.color};">
-                            <span style="background: ${sol.color}; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; margin-right: 5px; vertical-align: text-bottom;">${sol.type}</span>
-                            <strong style="color: var(--text-main); font-size: 1.05rem;">${sol.title}</strong>
-                            <br><span style="font-size: 0.9rem; color: #6b7280;">${sol.desc}</span>
+                        <li class="solution-item ${typeClass[sol.type] || ''}">
+                            <span class="solution-badge">${sol.type}</span>
+                            <strong class="solution-title">${sol.title}</strong>
+                            <br><span class="solution-desc">${sol.desc}</span>
                         </li>`;
                 });
             } else {
-                // == 其它校验类错误（电量设反了 / 百分比越界 / 时间窗非法 / 无法求解）：没有 fallback_stats/solutions，简单提示即可 ==
+                // == 其它校验类错误（电量设反了 / 百分比越界 / 时间窗非法 / 电流越界）：没有 fallback_stats/solutions，简单提示即可 ==
                 alert(data.result.error);
             }
         } else {
             // == 正常满电的状态渲染 ==
+            const r = data.result;
             document.getElementById('normal-result').style.display = 'block';
-            document.getElementById('res-current').innerText = data.result.optimal_current + ' A';
-            document.getElementById('res-duration').innerText = data.result.charging_duration + ' 小时';
-            document.getElementById('res-power').innerText = data.result.effective_power_kw + ' kW';
-            document.getElementById('res-loss').innerText = data.result.loss_percentage + ' %';
-            document.getElementById('res-energy').innerText = data.result.energy_added.toFixed(1) + ' kWh';
-            document.getElementById('res-cost').innerText = '¥ ' + data.result.cost.toFixed(2);
+            document.getElementById('res-current').innerText = r.optimal_current + ' A';
+            document.getElementById('res-duration').innerText = r.charging_duration + ' 小时';
+            document.getElementById('res-power').innerText = r.effective_power_kw + ' kW';
+            document.getElementById('res-loss').innerText = r.loss_percentage + ' %';
+            document.getElementById('res-energy').innerText = r.energy_added.toFixed(1) + ' kWh';
+            document.getElementById('res-cost').innerText = '¥ ' + r.cost.toFixed(2);
+
+            // 记录微调状态：新一轮"开始计算"(forcedCurrent==null)时，最优值刷新；微调时保留原最优值
+            if (forcedCurrent == null) {
+                lastCalc = { optimal: r.optimal_current, displayed: r.optimal_current, min: r.min_current, max: r.max_current };
+            } else {
+                lastCalc = { ...lastCalc, displayed: r.optimal_current, min: r.min_current, max: r.max_current };
+            }
+            const status = document.getElementById('current-adjust-status');
+            status.innerText = forcedCurrent != null ? `(手动 ${r.optimal_current}A，最优 ${lastCalc.optimal}A)` : '';
+
+            // 手动调低电流可能拖过结束时间：后端给出超出量，这里如实提示
+            const note = document.getElementById('overrun-note');
+            if (r.window_overrun_hours > 0) {
+                const mins = Math.round(r.window_overrun_hours * 60);
+                const h = Math.floor(mins / 60), m = mins % 60;
+                note.innerText = `⚠️ 该电流下无法在结束时间前充满，将超出 ${h > 0 ? h + '小时' : ''}${m}分（超出部分电价已计入总费）`;
+                note.style.display = 'block';
+            } else {
+                note.style.display = 'none';
+            }
         }
     } catch (error) {
         alert('计算出错，请检查网络或后端配置。');
         document.getElementById('loading').style.display = 'none';
+    } finally {
+        calcInFlight = false;
     }
+}
+
+// 微调电流：以 1A 步进。首次点击先吸附到整数——车机只能设整数安培，
+// 所以从 24.36A 点"+"得到 25（向上取整）、点"-"得到 24（向下取整），之后按整数 ±1。
+// 重算走后端同一条计算链路（物理公式只有后端一份），不在前端复算功率/损耗。
+function adjustResultCurrent(delta) {
+    if (!lastCalc) return;
+    const cur = lastCalc.displayed;
+    let next;
+    if (!Number.isInteger(cur)) {
+        next = delta > 0 ? Math.ceil(cur) : Math.floor(cur);
+    } else {
+        next = cur + delta;
+    }
+    next = Math.min(lastCalc.max, Math.max(lastCalc.min, next));
+    if (next === cur) return; // 已到边界或吸附后无变化，不发多余请求
+    return calculate(next);
+}
+
+function restoreOptimalCurrent() {
+    if (!lastCalc) return;
+    return calculate(); // 不带 forced_current，重新求解最优
 }
 
 // === 新增：时间输入框加减与智能吸附逻辑 ===

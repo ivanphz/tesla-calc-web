@@ -11,26 +11,26 @@
 <div class="container">
     <div class="panel">
         <h2>⚡ 充电参数设置</h2>
-        
-        <!-- 沙盒时间模拟器 -->
-        <div style="background: #eef2ff; padding: 12px; border-radius: 8px; margin-bottom: 24px; font-size: 0.95rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border: 1px dashed #a5b4fc;">
-            <label style="margin: 0; font-weight: 600; cursor: pointer; color: #4338ca; display: flex; align-items: center; white-space: nowrap;">
-                <input type="checkbox" id="enable-mock-time" style="margin-right: 6px;"> ⏱️ 开启沙盒时间测试
+
+        <!-- 沙盒时间模拟器：勾选后计算时用这里的时间代替真实当前时间，方便测试"如果现在是几点"的场景 -->
+        <div class="sandbox-box">
+            <label>
+                <input type="checkbox" id="enable-mock-time"> ⏱️ 开启沙盒时间测试
             </label>
-            <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
-                <button type="button" onclick="adjustTime('mock-time', -5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid #c7d2fe; background: white; border-radius: 4px; cursor: pointer; color: #4338ca; font-weight: bold;">-</button>
-                <input type="time" id="mock-time" style="padding: 2px 4px; border: 1px solid #c7d2fe; border-radius: 4px; outline: none; background: white; color: #4338ca; font-weight: bold; flex-shrink: 0;">
-                <button type="button" onclick="adjustTime('mock-time', 5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid #c7d2fe; background: white; border-radius: 4px; cursor: pointer; color: #4338ca; font-weight: bold;">+</button>
-                <button type="button" onclick="syncLocalTime()" style="height: 28px; flex-shrink: 0; background: white; border: 1px solid #c7d2fe; border-radius: 4px; cursor: pointer; color: #4338ca; font-size: 0.85rem; padding: 0 8px; margin-left: 4px; white-space: nowrap;">📍当前</button>
+            <div class="sandbox-controls">
+                <button type="button" class="step-btn step-btn--sandbox" onclick="adjustTime('mock-time', -5)">-</button>
+                <input type="time" id="mock-time">
+                <button type="button" class="step-btn step-btn--sandbox" onclick="adjustTime('mock-time', 5)">+</button>
+                <button type="button" class="btn-now" onclick="syncLocalTime()">📍当前</button>
             </div>
         </div>
 
         <div class="control-group">
-            <label style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
-                <span style="white-space: nowrap;">当前电量 (%)</span>
-                <span id="sync-status" style="font-size: 0.85rem; font-weight: normal; white-space: nowrap;"></span>
-                <a href="javascript:void(0)" onclick="fetchRealTimeBattery()" style="font-size: 0.85rem; margin-left: auto; color: var(--primary); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; background: white; white-space: nowrap; flex-shrink: 0;">↻ 还原车机电量</a>
-            </label>
+            <div class="field-header">
+                <span class="field-title">当前电量 (%)</span>
+                <span id="sync-status" class="sync-text"></span>
+                <a href="javascript:void(0)" onclick="fetchRealTimeBattery()" class="sync-link">↻ 还原车机电量</a>
+            </div>
             <div class="stepper-large">
                 <button type="button" onclick="adjustStart(-10)">-10</button>
                 <button type="button" onclick="adjustStart(-5)">-5</button>
@@ -42,13 +42,13 @@
             </div>
         </div>
 
-        <div class="control-group" style="margin-top: 32px;">
-            <label style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
-                <span style="white-space: nowrap;">目标电量: <span id="target-val-display" style="color: var(--primary);">90%</span></span>
-                <span id="target-sync-status" style="font-size: 0.85rem; font-weight: normal; white-space: nowrap;"></span>
-                <a href="javascript:void(0)" onclick="fetchRealTimeChargeLimit()" style="font-size: 0.85rem; margin-left: auto; color: var(--primary); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; background: white; white-space: nowrap; flex-shrink: 0;">↻ 还原车机目标</a>
-            </label>
-            <div class="stepper" style="margin-bottom: 12px;">
+        <div class="control-group">
+            <div class="field-header">
+                <span class="field-title">目标电量: <span id="target-val-display" class="field-value">90%</span></span>
+                <span id="target-sync-status" class="sync-text"></span>
+                <a href="javascript:void(0)" onclick="fetchRealTimeChargeLimit()" class="sync-link">↻ 还原车机目标</a>
+            </div>
+            <div class="stepper">
                 <button type="button" onclick="adjustTarget(-1)">-</button>
                 <input type="number" id="target-battery" value="90" min="50" max="100" onchange="syncTarget(this.value)">
                 <button type="button" onclick="adjustTarget(1)">+</button>
@@ -63,49 +63,48 @@
             </div>
         </div>
 
-        <div class="control-group" style="margin-top: 32px;">
+        <div class="control-group">
             <label>基准充电时段</label>
             <div class="quick-btns">
                 <button type="button" id="btn-time-night" onclick="setTimeSlot('22:00', '07:00', this)" class="active">谷电 (22:00-07:00)</button>
                 <button type="button" id="btn-time-noon" onclick="setTimeSlot('11:00', '13:00', this)">午间 (11:00-13:00)</button>
             </div>
-            <div class="time-inputs" style="display: flex; align-items: flex-start; gap: 12px; margin-top: 12px; flex-wrap: wrap;">
-                <div>
-                    <div style="display: flex; gap: 4px; align-items: center;">
-                        <button type="button" onclick="adjustTime('start-time', -5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">-</button>
-                        <input type="time" id="start-time" value="22:00" onchange="syncBaseWindowButtonState(); saveSettings()" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; flex-shrink: 0;">
-                        <button type="button" onclick="adjustTime('start-time', 5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">+</button>
+            <div class="time-slot-row">
+                <div class="time-slot-group">
+                    <div class="time-input-row">
+                        <button type="button" class="step-btn" onclick="adjustTime('start-time', -5)">-</button>
+                        <input type="time" id="start-time" value="22:00" onchange="syncBaseWindowButtonState(); saveSettings()">
+                        <button type="button" class="step-btn" onclick="adjustTime('start-time', 5)">+</button>
                     </div>
-                    <div class="quick-btns" style="margin-top: 6px; gap: 4px;">
-                        <button type="button" style="padding: 3px 8px; font-size: 0.8rem;" onclick="setStartTimeNow()">当前</button>
-                        <button type="button" style="padding: 3px 8px; font-size: 0.8rem;" onclick="setStartTime('22:00')">22点</button>
-                        <button type="button" style="padding: 3px 8px; font-size: 0.8rem;" onclick="setStartTime('11:00')">11点</button>
+                    <div class="quick-btns quick-btns--compact">
+                        <button type="button" onclick="setStartTimeNow()">当前</button>
+                        <button type="button" onclick="setStartTime('22:00')">22点</button>
+                        <button type="button" onclick="setStartTime('11:00')">11点</button>
                     </div>
                 </div>
-                <span style="white-space: nowrap; margin-top: 6px;">至</span>
-                <div>
-                    <div style="display: flex; gap: 4px; align-items: center;">
-                        <button type="button" onclick="adjustTime('end-time', -5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">-</button>
-                        <input type="time" id="end-time" value="07:00" onchange="syncBaseWindowButtonState(); saveSettings()" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; flex-shrink: 0;">
-                        <button type="button" onclick="adjustTime('end-time', 5)" style="width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">+</button>
+                <span class="time-slot-separator">至</span>
+                <div class="time-slot-group">
+                    <div class="time-input-row">
+                        <button type="button" class="step-btn" onclick="adjustTime('end-time', -5)">-</button>
+                        <input type="time" id="end-time" value="07:00" onchange="syncBaseWindowButtonState(); saveSettings()">
+                        <button type="button" class="step-btn" onclick="adjustTime('end-time', 5)">+</button>
                     </div>
-                    <div class="quick-btns" style="margin-top: 6px; gap: 4px;">
-                        <button type="button" style="padding: 3px 8px; font-size: 0.8rem;" onclick="setEndTime('07:00')">7点</button>
-                        <button type="button" style="padding: 3px 8px; font-size: 0.8rem;" onclick="setEndTime('13:00')">13点</button>
+                    <div class="quick-btns quick-btns--compact">
+                        <button type="button" onclick="setEndTime('07:00')">7点</button>
+                        <button type="button" onclick="setEndTime('13:00')">13点</button>
                     </div>
                 </div>
             </div>
         </div>
-        
-        <div class="control-group" style="margin-top: 32px;">
-            <label style="display: flex; justify-content: space-between; cursor: pointer;" onclick="toggleTariffSettings()">
-                💰 分时电价配置 <span style="font-size: 0.85rem; color: #6b7280;">(点击展开/收起)</span>
+
+        <div class="control-group">
+            <label class="tariff-toggle" onclick="toggleTariffSettings()">
+                💰 分时电价 (只读) <span class="tariff-hint">(点击展开/收起)</span>
             </label>
-            <textarea id="tariff-config" rows="4" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-family: monospace; display: none;" onchange="saveSettings()">
-22:00-07:00=0.3783
-07:00-11:00=0.5783
-11:00-13:00=0.3783
-13:00-22:00=0.5783</textarea>
+            <div id="tariff-panel" class="tariff-panel">
+                <pre id="tariff-display" class="tariff-display">(点击「开始计算」后显示当前生效电价)</pre>
+                <p class="tariff-hint">电价由后端配置统一管理，改电价请修改 functions/api/config.js 里的 DEFAULTS.tariff_config 后重新部署。</p>
+            </div>
         </div>
 
         <button class="btn-calc" onclick="calculate()">开始计算</button>
@@ -113,30 +112,38 @@
 
     <div class="panel">
         <h2>📊 计算结果</h2>
-        <div id="loading" style="display: none; text-align: center; padding: 20px;">计算中...</div>
-        
+        <div id="loading" class="loading-indicator">计算中...</div>
+
         <div id="normal-result" class="result-box">
             <div class="result-item"><span>建议充电电流</span><span class="result-val" id="res-current">-- A</span></div>
+            <div class="current-adjust">
+                <span class="text-muted">微调电流:</span>
+                <button type="button" class="step-btn" onclick="adjustResultCurrent(-1)">-</button>
+                <button type="button" class="step-btn" onclick="adjustResultCurrent(1)">+</button>
+                <a href="javascript:void(0)" onclick="restoreOptimalCurrent()" class="sync-link">↻ 还原最优</a>
+                <span id="current-adjust-status" class="sync-text"></span>
+            </div>
+            <div id="overrun-note" class="overrun-note"></div>
             <div class="result-item"><span>充入电量估算</span><span class="result-val" id="res-energy">-- kWh</span></div>
             <div class="result-item"><span>预计充电时长</span><span class="result-val" id="res-duration">-- 小时</span></div>
-            <div class="result-item"><span>预估充电总费</span><span class="result-val" id="res-cost" style="color: #10b981;">¥ --</span></div>
-            <div class="result-item"><span>有效充电功率</span><span class="result-val" id="res-power" style="color: #6b7280; font-size: 0.95rem;">-- kW</span></div>
-            <div class="result-item"><span>发热线损比例</span><span class="result-val" id="res-loss" style="color: #6b7280; font-size: 0.95rem;">-- %</span></div>
+            <div class="result-item"><span>预估充电总费</span><span class="result-val" id="res-cost">¥ --</span></div>
+            <div class="result-item"><span>有效充电功率</span><span class="result-val" id="res-power">-- kW</span></div>
+            <div class="result-item"><span>发热线损比例</span><span class="result-val" id="res-loss">-- %</span></div>
         </div>
 
         <div id="warning-result" class="warning-box">
             <h4>⚠️ 无法在时段内达成目标</h4>
-            
-            <div style="background: rgba(255,255,255,0.6); padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 0.95rem; border: 1px dashed var(--warning-border);">
-                <strong id="warn-fallback-label" style="display: block; margin-bottom: 8px;">💡 到点妥协方案:</strong>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>按 32A 满载只能充至：</span><strong id="warn-reachable" style="color: #dc2626; font-size: 1.1rem;">--%</strong></div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>预估充入电量：</span><strong id="warn-fallback-energy">-- kWh</strong></div>
-                <div style="display: flex; justify-content: space-between;"><span>预估花费电费：</span><strong id="warn-fallback-cost" style="color: #10b981;">¥ --</strong></div>
+
+            <div class="fallback-box">
+                <strong id="warn-fallback-label">💡 到点妥协方案:</strong>
+                <div class="fallback-row"><span>按 <span id="warn-max-current">32</span>A 满载只能充至：</span><strong id="warn-reachable">--%</strong></div>
+                <div class="fallback-row"><span>预估充入电量：</span><strong id="warn-fallback-energy">-- kWh</strong></div>
+                <div class="fallback-row"><span>预估花费电费：</span><strong id="warn-fallback-cost">¥ --</strong></div>
             </div>
 
-            <p style="margin: 14px 0 8px 0; font-weight: 600;">✅ 如果必须充满，系统建议：</p>
-            <ul id="warn-solutions-list" style="margin: 0; padding-left: 0; list-style: none;">
-                <!-- 动态注入方案 -->
+            <p class="solutions-intro">✅ 如果必须充满，系统建议：</p>
+            <ul id="warn-solutions-list" class="solutions-list">
+                <!-- 动态注入方案，见 app.js 里的 calculate() -->
             </ul>
         </div>
     </div>
